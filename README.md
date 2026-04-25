@@ -1,6 +1,10 @@
 # GEANT4 Simulation of Thermal Neutron-Induced U-235 Fission with Plastic Scintillator Readout
 
-log confirms it:
+Note: If modifying the simulation (re-running cmake), must run
+
+``` source /path/to/geant4-v11.4.0-install/bin/geant4.sh ```
+
+log confirms:
                                                                                                                                                                                                         
   Produce fission fragments       1                                                                                                                                                                     
   Fission fragment production is now activated in HP package for Z = 92, A = 235                                                                                                                        
