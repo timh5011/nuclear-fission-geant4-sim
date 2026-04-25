@@ -9,7 +9,7 @@
 #include "DetectorConstruction.hh"
 #include "Physics.hh"
 #include "Action.hh"
-#include "Detector.hh"
+#include "G4ParticleHPManager.hh"
 
 int main(int argc, char** argv) {
     G4RunManager *runManager = new G4RunManager();
@@ -18,15 +18,17 @@ int main(int argc, char** argv) {
     runManager->SetUserInitialization(new MyPhysicsList());
     runManager->SetUserInitialization(new MyActionInitialization());
 
+    G4ParticleHPManager::GetInstance()->SetProduceFissionFragments(true);
+
     runManager->Initialize();
+
+    G4UImanager *UImanager = G4UImanager::GetUIpointer();
 
     G4UIExecutive *ui =  new G4UIExecutive(argc, argv);
 
     G4VisManager *visManager = new G4VisExecutive();
     visManager->Initialize();
 
-    G4UImanager *UImanager = G4UImanager::GetUIpointer();
-    
     UImanager->ApplyCommand("/vis/open OGL");
     UImanager->ApplyCommand("/vis/viewer/set/viewpointVector 1 1 1");
     UImanager->ApplyCommand("/vis/drawVolume");

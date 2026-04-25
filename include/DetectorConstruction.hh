@@ -18,7 +18,6 @@
 #include "G4Isotope.hh"
 #include "G4SystemOfUnits.hh"
 
-#include "Detector.hh"
 
 class MyDetectorConstruction : public G4VUserDetectorConstruction {
     public:

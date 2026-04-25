@@ -13,7 +13,7 @@ class MyEventAction : public G4UserEventAction
 {
 public:
     // Constructor
-    MyEventAction(MySteppingAction* steppingAction, MySensitiveDetector* sensitiveDetector);
+    MyEventAction(MySteppingAction* steppingAction);
 
     // Destructor
     virtual ~MyEventAction();

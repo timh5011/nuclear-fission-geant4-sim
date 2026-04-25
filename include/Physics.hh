@@ -69,10 +69,10 @@
 #include "G4DecayPhysics.hh"
 #include "G4RadioactiveDecayPhysics.hh"
 
-class PhysicsList : public G4VModularPhysicsList
+class MyPhysicsList : public G4VModularPhysicsList
 {
 public:
-    PhysicsList()
+    MyPhysicsList()
     {
         SetVerboseLevel(1);
 
@@ -83,7 +83,7 @@ public:
         // Configure after construction if needed (see below)
         auto opticalPhysics = new G4OpticalPhysics();
         // Enable scintillation with Birks saturation (critical for PSD)
-        opticalPhysics->SetScintillationByParticleType(true);
+        // opticalPhysics->SetScintillationByParticleType(true);  // removed in Geant4 v11
         RegisterPhysics(opticalPhysics);
 
         // Hadronic physics — HP neutron transport + BIC cascade
@@ -101,7 +101,7 @@ public:
         RegisterPhysics(new G4RadioactiveDecayPhysics());
     }
 
-    ~PhysicsList() override = default;
+    ~MyPhysicsList() override = default;
 };
 
 #endif

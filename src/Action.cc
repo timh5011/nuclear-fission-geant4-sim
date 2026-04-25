@@ -8,7 +8,7 @@ void MyActionInitialization::Build() const {
 
     MyPrimaryGenerator *generator = new MyPrimaryGenerator();
     MySteppingAction* steppingAction = new MySteppingAction();
-    MyEventAction* eventAction = new MyEventAction(steppingAction, sensitiveDetector);
+    MyEventAction* eventAction = new MyEventAction(steppingAction);
     MyRunAction* runAction = new MyRunAction();
 
     SetUserAction(generator);

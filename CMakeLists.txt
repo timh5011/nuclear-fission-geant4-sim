@@ -24,12 +24,12 @@ file(GLOB headers ${PROJECT_SOURCE_DIR}/include/*.hh)
 
 ##
 
-add_executable(nuclear_fission nuclear_fission.cc ${sources} ${headers})
+add_executable(nuclear_fission nuclear-fission.cc ${sources} ${headers})
 target_link_libraries(nuclear_fission ${Geant4_LIBRARIES})
 
 ##
 
-file(GLOB MACRO_FILES ${PROJECT_SOURCE_DIR}/macros/*.mac)
+file(GLOB MACRO_FILES ${PROJECT_SOURCE_DIR}/src/macros/*.mac)
 foreach(_script ${MACRO_FILES})
   configure_file(
     ${_script}

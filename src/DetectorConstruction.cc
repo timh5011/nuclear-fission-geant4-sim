@@ -2,7 +2,6 @@
 
 MyDetectorConstruction::MyDetectorConstruction()
     : fU235Material(nullptr),
-      fScintMaterial(nullptr),
       fWorldMaterial(nullptr)
 {
     DefineMaterials();  // Build materials once at construction time
@@ -31,13 +30,16 @@ void MyDetectorConstruction::DefineMaterials()
 
 G4VPhysicalVolume* MyDetectorConstruction::Construct()
 {
-    // Now use fU235Material, fScintMaterial, fWorldMaterial
-    // to build your geometry...
+    G4double worldHalf = 10.*cm;
+    auto solidWorld = new G4Box("World", worldHalf, worldHalf, worldHalf);
+    auto logicWorld = new G4LogicalVolume(solidWorld, fWorldMaterial, "World");
+    auto physWorld  = new G4PVPlacement(nullptr, G4ThreeVector(),
+                                        logicWorld, "World", nullptr, false, 0);
 
-    // Example:
-    auto solidTarget = new G4Box("UTarget", 0.5*um, 5*mm, 5*mm);
+    auto solidTarget = new G4Box("UTarget", 0.5*um, 5.*mm, 5.*mm);
     auto logicTarget = new G4LogicalVolume(solidTarget, fU235Material, "UTarget");
-    // ... placement ...
+    new G4PVPlacement(nullptr, G4ThreeVector(),
+                      logicTarget, "UTarget", logicWorld, false, 0);
 
     return physWorld;
 }
