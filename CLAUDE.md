@@ -44,9 +44,11 @@ Per the README: green = neutral (prompt fission neutrons + gammas, escape to wor
 
 ## Documentation conventions
 
-When writing or extending `architecture.md` and the planned `theory.md`, classify each step / process / component as belonging to one of two stages, and say so explicitly:
+Documentation lives in `doc/`. Current files: `doc/theory.md` (fission physics — detector section not yet written) and `doc/architecture.md`. When writing or extending these documents, classify each step / process / component as belonging to one of two stages, and say so explicitly:
 
 - **Source stage** — neutron-on-uranium and everything physically downstream of it inside the target: fission, prompt neutron + gamma emission, fission-fragment transport and stopping, radioactive decay chains of the fragments. Anything that would still happen if the scintillator were removed.
 - **Detector / DAQ stage** — scintillator physics (energy deposition → optical photons via `G4OpticalPhysics`, Birks quenching, photon transport to the photocathode), the photodetector model (e.g. SiPM response — PDE, gain, dark counts, crosstalk, afterpulsing), digitization / triggering, and the offline analysis scripts in `analysis/` that consume the resulting waveforms or ntuples.
 
 This split is load-bearing because the two stages are validated against very different references (ENDF / fission-product yield tables vs. scintillator + SiPM datasheets), and confusing them is the easiest way to write a plausible-looking but wrong explanation. When a process spans both — e.g. a fission-fragment beta entering the scintillator — call out the boundary-crossing explicitly rather than picking one bucket.
+
+**Math formatting in `theory.md`:** all mathematical expressions must be written in LaTeX math syntax, not plain Unicode or ASCII. Use `$...$` for inline math and `$$...$$` (on its own line, with blank lines above and below) for display equations. Verify that every formula compiles correctly in a standard GitHub-flavored Markdown renderer that supports KaTeX/MathJax. Do not use Unicode superscripts/subscripts (², ³, ₀, etc.) inside equations — those belong only in prose text where no LaTeX context is active.
