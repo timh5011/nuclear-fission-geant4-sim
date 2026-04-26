@@ -86,3 +86,14 @@ what do you mean by this: One caveat worth flagging: pure ²³⁵U at 19.1 g/cm�
   - P(fission) ≈ 82% — genuinely consistent
   - ~78% of fragments escape transversely into air with ~12 cm of range                                                                                                                                 
   - No production-cut issues                                           
+
+  ---------------------------------------
+
+    2. What do you want to detect / measure?                                                                                                                                                              
+  The particles hitting the scintillator will be a mix:                                                                                                                                                 
+  - Fission fragments (~80–100 MeV, short range, huge dE/dx) — the dominant energy signal                                                                                                               
+  - Prompt gammas (~7 per fission, MeV-scale, Compton-scatter in plastic)                                                                                                                               
+  - Prompt neutrons (~2–3 per fission, detected via proton recoil)                                                                                                                                      
+  - Beta electrons from fragment decay chains (delayed, lower energy)                                                                                                                                   
+                                                                                                                                                                                                        
+  Are you interested in all of these, or focusing on one? For example, fragment detection is very different from neutron detection.     
