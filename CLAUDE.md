@@ -41,3 +41,12 @@ The four user classes:
 ## What you'll see in the OGL viewer
 
 Per the README: green = neutral (prompt fission neutrons + gammas, escape to world boundary), blue stubs at the foil = fission fragments stopping in microns (correct — they are heavy highly-charged ions), red = electrons / betas from the fragment decay chains. Per-event asymmetry is just momentum conservation of one fission, not a bug.
+
+## Documentation conventions
+
+When writing or extending `architecture.md` and the planned `theory.md`, classify each step / process / component as belonging to one of two stages, and say so explicitly:
+
+- **Source stage** — neutron-on-uranium and everything physically downstream of it inside the target: fission, prompt neutron + gamma emission, fission-fragment transport and stopping, radioactive decay chains of the fragments. Anything that would still happen if the scintillator were removed.
+- **Detector / DAQ stage** — scintillator physics (energy deposition → optical photons via `G4OpticalPhysics`, Birks quenching, photon transport to the photocathode), the photodetector model (e.g. SiPM response — PDE, gain, dark counts, crosstalk, afterpulsing), digitization / triggering, and the offline analysis scripts in `analysis/` that consume the resulting waveforms or ntuples.
+
+This split is load-bearing because the two stages are validated against very different references (ENDF / fission-product yield tables vs. scintillator + SiPM datasheets), and confusing them is the easiest way to write a plausible-looking but wrong explanation. When a process spans both — e.g. a fission-fragment beta entering the scintillator — call out the boundary-crossing explicitly rather than picking one bucket.
