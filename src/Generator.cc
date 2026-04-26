@@ -12,8 +12,8 @@ void MyPrimaryGenerator::GeneratePrimaries(G4Event *anEvent){
     G4ParticleTable *particleTable = G4ParticleTable::GetParticleTable();
     G4ParticleDefinition *particle = particleTable->FindParticle("neutron");
 
-    G4ThreeVector pos(0, 0, -1 * cm); // Defines particle initial position
-    G4ThreeVector mom(0.,0.,1.);// Defines particle initial momentum direction
+    G4ThreeVector pos(-1 * cm, 0, 0); // Defines particle initial position
+    G4ThreeVector mom(1.,0.,0.);// Defines particle initial momentum direction
 
     fParticleGun->SetParticlePosition(pos);
     fParticleGun->SetParticleMomentumDirection(mom);
