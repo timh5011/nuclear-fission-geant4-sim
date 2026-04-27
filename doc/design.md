@@ -1,0 +1,311 @@
+# Design Specification: Thermal Neutron-Induced ²³⁵U Fission Detector
+
+## Overview
+
+GEANT4 v11.4.0 simulation of thermal neutron-induced fission of ²³⁵U, with a
+scintillator-based detector system designed to reconstruct the prompt and delayed
+radiation output of the fission event. The system consists of three subsystems:
+
+1. **Fission trigger** — thin plastic scintillator in contact with the ²³⁵U foil
+2. **Organic scintillator array** — hemisphere of EJ-309 liquid scintillators for
+   neutron/gamma detection with pulse shape discrimination (PSD)
+3. **Inorganic scintillator detectors** — LaBr₃(Ce) crystals at backward angles
+   for gamma-ray spectroscopy
+
+---
+
+## Coordinate System and Conventions
+
+- Origin at the center of the ²³⁵U foil
+- Neutron beam along the +z axis
+- Foil normal along ±z
+- Organic array covers the forward hemisphere (+z)
+- LaBr₃ detectors at backward angles (−z hemisphere)
+- All angles measured from +z (beam axis): θ = 0° is forward, θ = 180° is backward
+
+---
+
+## 1. Fission Target Assembly
+
+### ²³⁵U Foil
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Material | Pure ²³⁵U (100% enriched) | — |
+| Geometry | Disc (G4Tubs) | — |
+| Diameter | 20 mm | — |
+| Thickness | 0.5 μm | Thin enough for fission fragments to escape |
+| Density | 19.1 g/cm³ | Metallic uranium |
+| Position | Origin, foil normal along z-axis | — |
+
+**Rationale:** 0.5 μm thickness matches real electroplated/vacuum-deposited
+fission targets (CHAFF, SPIDER style, ~50–500 µg/cm²). Roughly half the
+fission fragments escape via each foil face with near-full energy — minimal
+in-foil dE/dx, so the trigger pulse-height spectrum reflects fragment
+kinematics, not foil geometry. 20 mm diameter provides a reasonable target
+area for the neutron beam while keeping the target small relative to detector
+distances.
+
+### Trigger Scintillator
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Material | EJ-212 plastic scintillator | NIST: G4_PLASTIC_SC_VINYLTOLUENE (approximate) |
+| Geometry | Disc (G4Tubs) | — |
+| Diameter | 25 mm | Slightly larger than foil to catch edge fragments |
+| Thickness | 500 μm | Stops all fission fragments; transparent to most gammas |
+| Position | Immediately behind foil at z = −0.5 mm | In contact with or very close to foil |
+| Sensitive detector | Yes | Score energy deposition, apply ~3 MeVee threshold to select fragments |
+
+**Detection principle:** Fission fragments deposit ~80–100 MeV (quenched to
+~5–15 MeVee via Birks' law) in the first ~20 μm. Alpha particles from ²³⁵U
+decay deposit ~4.7 MeV (quenched to ~1–2 MeVee). Gammas deposit < 0.5 MeVee.
+A simple pulse height threshold cleanly selects fission events and provides
+the t = 0 timing reference.
+
+**Birks' constant for EJ-212:** kB ≈ 0.126 mm/MeV (typical PVT-based plastic).
+
+### Backing / Support (Optional)
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Material | Aluminum | — |
+| Geometry | Disc (G4Tubs) | — |
+| Diameter | 30 mm | — |
+| Thickness | 50 μm | Thin enough to be mostly transparent to gammas and neutrons |
+| Position | z = −1.0 mm (behind trigger scintillator) | — |
+
+**Note:** The backing provides mechanical support for the foil + trigger
+assembly.
+
+---
+
+## 2. Organic Scintillator Array (Forward Hemisphere)
+
+### Material: EJ-309 Liquid Scintillator
+
+| Property | Value |
+|---|---|
+| Composition | Organic liquid (xylene-based), H/C ratio ~1.25 |
+| Density | 0.959 g/cm³ |
+| Light output | ~12,300 photons/MeV (electrons) |
+| Peak emission wavelength | 424 nm |
+| Decay time (fast component) | 3.5 ns |
+| Decay time (slow component) | 32 ns |
+| Birks' constant | kB ≈ 0.11 mm/MeV |
+| H atoms/cm³ | ~5.43 × 10²² |
+
+**Composition:**
+- C: 84.2% by mass
+- H: 9.5% by mass
+- Remainder: proprietary solvent/fluor; approximated as pure xylene
+  (C₈H₁₀) at 0.959 g/cm³.
+
+Optical properties (RINDEX, SCINTILLATIONYIELD, FASTTIMECONSTANT,
+SLOWTIMECONSTANT, YIELDRATIO) are specified on the material properties
+table for optical photon transport.
+
+**Material variant:** Stilbene (trans-C₁₄H₁₂, density 1.16 g/cm³) is a
+candidate substitute for EJ-309 with stronger PSD response, particularly
+for low-energy delayed neutrons. Stilbene geometry is the same solid
+cylinder; only material definition and optical properties differ.
+
+### Detector Geometry
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Shape | Right circular cylinder (G4Tubs) | Standard detector form factor |
+| Diameter | 50 mm (2 inches) | — |
+| Length | 50 mm (2 inches) | — |
+| Housing | 1 mm aluminum shell | Optional |
+
+### Array Layout
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Number of detectors | 8 | — |
+| Arrangement | Forward hemisphere, evenly distributed | — |
+| Radius from origin | 500 mm (50 cm) | Flight path for neutron TOF |
+| Angular coverage | θ = 30° to 150° in ~20° steps | 4 polar rings × 2 azimuthal positions |
+| Sensitive detector | Yes, all 8 | — |
+
+**Positions (spherical coordinates, r = 500 mm):**
+
+| Detector ID | θ (polar) | φ (azimuthal) |
+|---|---|---|
+| EJ309-0 | 30° | 0° |
+| EJ309-1 | 30° | 180° |
+| EJ309-2 | 60° | 90° |
+| EJ309-3 | 60° | 270° |
+| EJ309-4 | 90° | 0° |
+| EJ309-5 | 90° | 180° |
+| EJ309-6 | 120° | 90° |
+| EJ309-7 | 120° | 270° |
+
+**Detection goals:**
+- Prompt fission neutrons: detected via proton recoil (n-p elastic scattering
+  on hydrogen). Neutron energy reconstructed from time-of-flight: E = ½m(d/t)²
+  where d = 500 mm and t is measured relative to trigger t₀.
+- Prompt fission gammas: detected via Compton scattering and photoelectric
+  absorption. Arrive at t ≈ d/c ≈ 1.7 ns after fission — well separated
+  from neutrons in TOF spectrum.
+- Neutron/gamma discrimination: via PSD (ratio of slow to fast scintillation
+  component), using per-particle-type scintillation yields and time constants.
+- Delayed neutrons and gammas: detected at late times (ms to seconds after
+  trigger).
+
+**TOF timing reference:**
+
+| Particle | Energy | Velocity | TOF to 500 mm |
+|---|---|---|---|
+| Gamma | any | c | 1.7 ns |
+| Neutron | 0.5 MeV | 0.033c | 51 ns |
+| Neutron | 2.0 MeV | 0.065c | 26 ns |
+| Neutron | 5.0 MeV | 0.103c | 16 ns |
+
+---
+
+## 3. Inorganic Scintillator Detectors (Backward Angles)
+
+### Material: LaBr₃(Ce) — Lanthanum Bromide doped with Cerium
+
+| Property | Value |
+|---|---|
+| Composition | LaBr₃ with ~5% Ce doping |
+| Density | 5.08 g/cm³ |
+| Effective Z | ~46 |
+| Light output | ~63,000 photons/MeV |
+| Energy resolution | ~2.8% FWHM at 662 keV |
+| Decay time | 16 ns |
+| Peak emission wavelength | 380 nm |
+| Hygroscopic | Yes — must be hermetically sealed in practice |
+
+**Composition:**
+- La: 34.85% by mass (Z = 57, A = 138.905)
+- Br: 60.14% by mass (Z = 35, A = 79.904)
+- Ce: 5.01% by mass (Z = 58, A = 140.116)
+
+The high effective Z is what gives LaBr₃ its gamma spectroscopy advantage —
+photoelectric cross section scales as ~Z⁴⁻⁵, so photopeaks are prominent
+rather than the Compton-dominated response of organic scintillators.
+
+**Intrinsic backgrounds:** LaBr₃(Ce) carries an internal radioactive
+background from ¹³⁸La (t₁/₂ = 1.05 × 10¹¹ yr, 0.089% of natural lanthanum)
+producing a continuous spectrum, plus ²²⁷Ac contamination from the raw
+material producing alpha peaks.
+
+### Detector Geometry
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Shape | Right circular cylinder (G4Tubs) | Standard form factor |
+| Diameter | 38 mm (1.5 inches) | Standard commercial size |
+| Length | 38 mm (1.5 inches) | — |
+
+### Placement
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Number of detectors | 2 | Sufficient for gamma spectroscopy |
+| Radius from origin | 300 mm (30 cm) | Closer than organic array — higher solid angle compensates for smaller size |
+| Positions | Backward angles to minimize neutron exposure | — |
+| Sensitive detector | Yes, both | — |
+
+**Positions (spherical coordinates, r = 300 mm):**
+
+| Detector ID | θ (polar) | φ (azimuthal) |
+|---|---|---|
+| LaBr3-0 | 135° | 45° |
+| LaBr3-1 | 135° | 225° |
+
+**Detection goals:**
+- Gamma energy spectroscopy with photopeak resolution. Identify specific
+  fission product gamma lines (e.g., ¹⁴⁰La at 1596 keV, ⁹⁵Zr at 724/757 keV,
+  ¹³³Xe at 81 keV, ¹³⁷Cs at 662 keV).
+- Delayed gamma timing relative to fission trigger for fission product
+  half-life measurements.
+- NOT intended for neutron detection — backward placement reduces neutron
+  flux, and LaBr₃ has no PSD capability.
+
+---
+
+## 4. World Volume
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Material | G4_AIR | Realistic; can switch to vacuum for debugging |
+| Geometry | Box (G4Box) | — |
+| Dimensions | 2 m × 2 m × 2 m | Large enough to contain all detectors with margin |
+
+---
+
+## 5. Primary Particle Source
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Particle | Neutron | — |
+| Energy | 0.0253 eV | Thermal (T = 293 K, v = 2200 m/s) |
+| Direction | +z | Normal to foil face |
+| Position | z = −100 mm | Upstream of foil |
+| Source profile | Pencil beam | Gaussian spot is a possible variant |
+
+---
+
+## 6. Physics List
+
+| Module | Purpose |
+|---|---|
+| `G4HadronPhysicsQGSP_BIC_HP` + `G4HadronElasticPhysicsHP` | High-precision neutron transport on ENDF/B-VII data; n + ²³⁵U cross sections below 20 MeV |
+| `G4EmStandardPhysics_option4` | Highest-accuracy EM physics |
+| `G4OpticalPhysics` (with per-particle-type scintillation enabled) | Scintillation, Cherenkov, optical boundary processes; required for PSD |
+| `G4RadioactiveDecayPhysics` | Fission-product β-decay chains, delayed γ/n emission |
+| `G4DecayPhysics`, `G4IonPhysics`, `G4IonElasticPhysics`, `G4StoppingPhysics`, `G4EmExtraPhysics` | Decay of unstable particles, ion transport, photo-/electro-nuclear reactions |
+
+Fission-fragment production must be enabled in the HP package
+(`G4ParticleHPManager::SetProduceFissionFragments(true)`); without it, the
+HP model deposits fission energy locally instead of producing explicit
+fragment tracks.
+
+---
+
+## 7. Sensitive Detector and Scoring
+
+### Energy-deposition scoring (per step, in every sensitive volume)
+
+- Energy deposited (MeV)
+- Global time (ns, relative to event start)
+- Particle type (PDG encoding)
+- Track ID and parent ID
+- Process that created the particle
+- dE/dx at each step (for Birks' law correction in post-processing)
+- Pre-step and post-step position
+
+### Optical-photon scoring (at photocathode surfaces)
+
+- Number of optical photons arriving per event
+- Arrival time of each optical photon
+- Wavelength of each optical photon
+
+Optical-photon scoring is what enables waveform reconstruction and PSD
+analysis from simulated pulses.
+
+---
+
+## 8. Analysis Observables
+
+### From the trigger detector:
+- Fission event rate and timing (t₀)
+- Trigger pulse height spectrum (verify fragment/alpha/gamma separation)
+
+### From the EJ-309 array:
+- Neutron time-of-flight spectrum → prompt fission neutron energy spectrum
+- PSD scatter plot (tail-to-total ratio vs. light output)
+- Prompt neutron multiplicity distribution
+- Prompt gamma multiplicity
+- Delayed radiation time profiles
+
+### From the LaBr₃ detectors:
+- Gamma energy spectrum with photopeaks
+- Identification of fission product gamma lines
+- Delayed gamma time profiles for half-life extraction
+

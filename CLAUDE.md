@@ -44,7 +44,13 @@ Per the README: green = neutral (prompt fission neutrons + gammas, escape to wor
 
 ## Documentation conventions
 
-Documentation lives in `doc/`. Current files: `doc/theory.md` (fission physics — detector section not yet written) and `doc/architecture.md`. When writing or extending these documents, classify each step / process / component as belonging to one of two stages, and say so explicitly:
+Documentation lives in `doc/`. Three files, each with a distinct audience and scope — keep content in the right one:
+
+- **`doc/design.md`** — detector + DAQ design spec. What an experimental physicist would want to know to understand or replicate the setup: target foil and scintillator geometry, materials and their measured properties, detector array layout, source configuration, expected signal characteristics, scoring/observables. Some detector-relevant physics belongs here, but only at the level needed to justify a design choice — deeper derivations live in `theory.md`.
+- **`doc/architecture.md`** — Geant4 simulation infrastructure. How the simulation *code* is organized and how data flows through the program: which user-init class does what, where materials are built, how `SteppingAction` / `EventAction` / `RunAction` hand off accumulated data, how scoring reaches `G4AnalysisManager`, how macros and the UI session fit in. Covers both the source and the detector, but from a code-flow / Geant4-API perspective rather than a physics-of-the-apparatus perspective.
+- **`doc/theory.md`** — theoretical physics of every process touched by the sim: fission cross sections, prompt and delayed neutron/gamma emission, fragment stopping, scintillation mechanisms, optical transport, photodetector response. Derivations and references go here. Anything in `design.md` that touches detector physics should be a short summary that points to the full treatment in this file.
+
+When writing or extending these documents, classify each step / process / component as belonging to one of two stages, and say so explicitly:
 
 - **Source stage** — neutron-on-uranium and everything physically downstream of it inside the target: fission, prompt neutron + gamma emission, fission-fragment transport and stopping, radioactive decay chains of the fragments. Anything that would still happen if the scintillator were removed.
 - **Detector / DAQ stage** — scintillator physics (energy deposition → optical photons via `G4OpticalPhysics`, Birks quenching, photon transport to the photocathode), the photodetector model (e.g. SiPM response — PDE, gain, dark counts, crosstalk, afterpulsing), digitization / triggering, and the offline analysis scripts in `analysis/` that consume the resulting waveforms or ntuples.

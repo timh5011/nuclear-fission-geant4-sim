@@ -135,4 +135,22 @@ what do you mean by this: One caveat worth flagging: pure ²³⁵U at 19.1 g/cm�
   The only registration in that constructor that's actually doing useful work is G4OpticalPhysics() — that's the one thing FTFP_BERT doesn't bring. The other two calls are redundant at best, a silent 
   downgrade at worst.
                                                                                                                                                                                                         
-  The fission sim avoids this entirely by starting from G4VModularPhysicsList and being explicit about everything it registers — no hidden inherited state to conflict with.  
+  The fission sim avoids this entirely by starting from G4VModularPhysicsList and being explicit about everything it registers — no hidden inherited state to conflict with.
+
+  ---------------------------------------
+
+  Pre-detector TODOs (flagged before scintillator implementation):
+
+  - SetScintillationByParticleType: the call was removed from G4OpticalPhysics in Geant4 v11.
+    The capability moved to G4OpticalParameters. Use:
+        #include "G4OpticalParameters.hh"
+        G4OpticalParameters::Instance()->SetScintByParticleType(true);
+    Must be set before runManager->Initialize(). Without it, per-particle yields
+    (PROTONSCINTILLATIONYIELD, ELECTRONSCINTILLATIONYIELD, ...) are silently ignored
+    and PSD cannot work. The commented line in Physics.hh ("removed in Geant4 v11") is
+    misleading — the API moved, it wasn't dropped.
+
+  - G4NeutronTrackingCut: not registered. Default 10 µs / 1 km cut applies, which is fine
+    for prompt fission neutrons (ns–µs) but kills delayed neutrons from fragment β-decay
+    chains (ms–s) before they reach the detector. Register G4NeutronTrackingCut and raise
+    the time limit if delayed-neutron detection is in scope.
