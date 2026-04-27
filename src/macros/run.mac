@@ -1,0 +1,7 @@
+# run.mac — headless batch-mode default for the nuclear-fission sim.
+# Invoke:  ./nuclear_fission run.mac
+# After Phase B lands, this writes data/<UTC>/hits.csv + events.csv at repo root.
+
+/run/initialize
+/run/printProgress 10
+/run/beamOn 100

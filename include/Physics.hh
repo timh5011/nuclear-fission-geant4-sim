@@ -79,12 +79,15 @@ public:
         // EM physics — option4 for best accuracy
         RegisterPhysics(new G4EmStandardPhysics_option4());
 
-        // Optical physics — scintillation, Cherenkov, boundary processes
-        // Configure after construction if needed (see below)
-        auto opticalPhysics = new G4OpticalPhysics();
-        // Enable scintillation with Birks saturation (critical for PSD)
-        // opticalPhysics->SetScintillationByParticleType(true);  // removed in Geant4 v11
-        RegisterPhysics(opticalPhysics);
+        // Optical physics — scintillation, Cherenkov, boundary processes.
+        // Per-particle scintillation (the lever PSD relies on, where protons
+        // and ions get their own YIELD1/YIELD2 ratios separate from electrons)
+        // is enabled via a flag that, in Geant4 v11, lives on G4OpticalParameters
+        // — NOT on G4OpticalPhysics any more. The flag is set in main() before
+        // runManager->Initialize(); see nuclear-fission.cc. Without that call,
+        // the per-particle MPT keys (PROTONSCINTILLATIONYIELD1/2 etc.) are
+        // silently ignored and PSD cannot work.
+        RegisterPhysics(new G4OpticalPhysics());
 
         // Hadronic physics — HP neutron transport + BIC cascade
         RegisterPhysics(new G4HadronPhysicsQGSP_BIC_HP());

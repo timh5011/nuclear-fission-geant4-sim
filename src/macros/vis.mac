@@ -1,0 +1,17 @@
+# vis.mac — interactive viewer setup, loaded automatically by main() when no
+# macro argument is given (i.e. plain `./nuclear_fission`). Drives the OGL
+# session that's normally inlined as ApplyCommand calls in C++.
+#
+# /run/initialize is idempotent — runManager->Initialize() was already called
+# from main() before the UI started, but the vis layer needs an initialized
+# scene to attach to, so calling it again here is the canonical pattern.
+
+/run/initialize
+
+/vis/open OGL
+/vis/viewer/set/viewpointVector 1 1 1
+/vis/drawVolume
+/vis/viewer/set/autoRefresh true
+/vis/scene/add/trajectories smooth
+/vis/scene/add/hits
+/tracking/verbose 0
