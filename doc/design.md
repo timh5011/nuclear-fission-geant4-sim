@@ -12,6 +12,11 @@ radiation output of the fission event. The system consists of three subsystems:
 3. **Inorganic scintillator detectors** — LaBr₃(Ce) crystals at backward angles
    for gamma-ray spectroscopy
 
+**This document describes the full designed system.** Not every component below
+is yet built in the simulation — see the *Implementation Status* section at the
+end for the per-component build state. Sections that describe deferred
+components are kept in place so the design intent is preserved for future work.
+
 ---
 
 ## Coordinate System and Conventions
@@ -48,6 +53,12 @@ distances.
 
 ### Trigger Scintillator
 
+> **Implementation status: deferred.** Not placed in Phase A. The simulation
+> recovers fission timing directly from the Geant4 vertex (no physical t=0
+> reference is needed in simulation), so the trigger is only required when
+> modelling a real-experiment DAQ. The spec below is preserved as the
+> intended design for when this is added.
+
 | Parameter | Value | Notes |
 |---|---|---|
 | Material | EJ-212 plastic scintillator | NIST: G4_PLASTIC_SC_VINYLTOLUENE (approximate) |
@@ -66,6 +77,8 @@ the t = 0 timing reference.
 **Birks' constant for EJ-212:** kB ≈ 0.126 mm/MeV (typical PVT-based plastic).
 
 ### Backing / Support (Optional)
+
+> **Implementation status: deferred.** Not placed in Phase A.
 
 | Parameter | Value | Notes |
 |---|---|---|
@@ -109,6 +122,30 @@ table for optical photon transport.
 candidate substitute for EJ-309 with stronger PSD response, particularly
 for low-energy delayed neutrons. Stilbene geometry is the same solid
 cylinder; only material definition and optical properties differ.
+*Implementation status: deferred — only EJ-309 is built in Phase A.*
+
+### Per-Particle Scintillation Parameters (Phase A implementation)
+
+PSD requires the fast/slow scintillation ratio to depend on particle type
+(see `doc/theory.md` §6 for the underlying physics — singlet vs triplet
+state population as a function of dE/dx). The table below lists the values
+attached to the EJ-309 `G4MaterialPropertiesTable` in
+`src/DetectorConstruction.cc::DefineMaterials()`. Per-particle yield curves
+are activated by `G4OpticalParameters::Instance()->SetScintByParticleType(true)`
+in `nuclear-fission.cc` before `runManager->Initialize()`.
+
+| Particle | YIELD1 (fast frac.) | YIELD2 (slow frac.) | Yield curve type |
+|---|---|---|---|
+| Electron | 0.85 | 0.15 | Linear, 12,300 ph/MeV |
+| Proton (recoil) | 0.55 | 0.45 | Birks-quenched (Enqvist 2013 fit) |
+| Heavy ion (fission frag) | 0.40 | 0.60 | Heavily quenched |
+| Alpha | 0.40 | 0.60 | Same as ion |
+| Deuteron / triton | 0.55 / 0.45 | (proton curve) | Reused proton curve |
+
+The slow-fraction increase from 0.15 (electrons) to 0.45 (protons) and 0.60
+(ions) is the lever PSD pulls on. Citations: Brooks F. D., NIM 4, 151 (1959);
+Enqvist A. et al., NIM A 715, 79 (2013); Pôzzi S. A. et al. (EJ-301/NE-213
+series). See `doc/theory.md` §6 for full derivation.
 
 ### Detector Geometry
 
@@ -117,7 +154,7 @@ cylinder; only material definition and optical properties differ.
 | Shape | Right circular cylinder (G4Tubs) | Standard detector form factor |
 | Diameter | 50 mm (2 inches) | — |
 | Length | 50 mm (2 inches) | — |
-| Housing | 1 mm aluminum shell | Optional |
+| Housing | 1 mm aluminum shell | Built in Phase A (was "optional" in spec; now required) |
 
 ### Array Layout
 
@@ -193,6 +230,19 @@ rather than the Compton-dominated response of organic scintillators.
 background from ¹³⁸La (t₁/₂ = 1.05 × 10¹¹ yr, 0.089% of natural lanthanum)
 producing a continuous spectrum, plus ²²⁷Ac contamination from the raw
 material producing alpha peaks.
+*Implementation status: NOT modeled in Phase A — see the inline comment in
+`src/DetectorConstruction.cc::DefineMaterials()` for the activation path.*
+
+**Per-particle scintillation parameters:** LaBr₃ has a single-component
+emission (no PSD lever), so all particles share the same linear yield
+curve (63,000 ph/MeV) and `YIELD1 = 1.0` in the MPT. Per-particle entries
+for electron, proton, ion, alpha, deuteron, and triton are all populated
+because Geant4's `SetScintByParticleType(true)` requires every particle
+that can deposit energy here to have a yield curve — there is no fallback
+to the global `SCINTILLATIONYIELD` constant in this mode. Real LaBr₃ has
+α/β ≈ 0.3 (alpha light output ~30 % of electron-equivalent at the same
+energy); the curves should be refined per Moszynski 2006 when photon
+scoring is enabled.
 
 ### Detector Geometry
 
@@ -261,10 +311,25 @@ material producing alpha peaks.
 | `G4RadioactiveDecayPhysics` | Fission-product β-decay chains, delayed γ/n emission |
 | `G4DecayPhysics`, `G4IonPhysics`, `G4IonElasticPhysics`, `G4StoppingPhysics`, `G4EmExtraPhysics` | Decay of unstable particles, ion transport, photo-/electro-nuclear reactions |
 
-Fission-fragment production must be enabled in the HP package
-(`G4ParticleHPManager::SetProduceFissionFragments(true)`); without it, the
-HP model deposits fission energy locally instead of producing explicit
-fragment tracks.
+Two flags **must** be set before `runManager->Initialize()`:
+
+1. `G4ParticleHPManager::GetInstance()->SetProduceFissionFragments(true)` —
+   without it, the HP model deposits fission energy locally instead of
+   producing explicit fragment ion tracks. Confirmation appears in the run
+   log: *"Fission fragment production is now activated in HP package for
+   Z = 92, A = 235"*.
+2. `G4OpticalParameters::Instance()->SetScintByParticleType(true)` —
+   per-particle scintillation. In Geant4 v11 this flag moved from
+   `G4OpticalPhysics::SetScintillationByParticleType` to `G4OpticalParameters`.
+   Without it, the per-particle MPT keys (`PROTONSCINTILLATIONYIELD1/2`,
+   `ELECTRONSCINTILLATIONYIELD1/2`, …) are silently ignored and PSD cannot
+   work — every particle would use the same fast/slow split.
+
+Both flags are set in `nuclear-fission.cc::main()`. With the second flag on,
+`G4Scintillation::PostStepDoIt` throws the fatal `Scint01` exception if any
+particle deposits energy in a scintillator material that lacks a per-particle
+yield entry — which is why `DefineMaterials()` populates electron / proton /
+ion / alpha / deuteron / triton curves on **both** EJ-309 and LaBr₃.
 
 ---
 
@@ -308,4 +373,64 @@ analysis from simulated pulses.
 - Gamma energy spectrum with photopeaks
 - Identification of fission product gamma lines
 - Delayed gamma time profiles for half-life extraction
+
+---
+
+## 9. Implementation Status
+
+This document describes the *full designed system*. The simulation is built
+in phases; what is and isn't yet implemented at the time of writing is
+recorded here. See `doc/architecture.md` for the code-flow side and
+`doc/plan.md` for the phased implementation plan.
+
+### Phase A — Geometry, materials, generator, mode dispatch (DONE)
+
+| Component | Status | Notes |
+|---|---|---|
+| 2 m × 2 m × 2 m air world | ✓ implemented | `G4Box`, `G4_AIR`. |
+| ²³⁵U foil (20 mm dia × 0.5 µm) | ✓ implemented | `G4Tubs`, normal ∥ ẑ, 100 % enriched. |
+| Trigger scintillator (§1.C) | ✗ deferred | Not needed in simulation — fission t=0 is recovered from the Geant4 vertex directly. May be added later when modelling a real DAQ. |
+| Backing plate (§1.D) | ✗ deferred | Mechanical-support analog; not load-bearing for physics. |
+| 8 × EJ-309 cylinders + 1 mm Al housing | ✓ implemented | Cylinder axes oriented radially. Housing now required (was "optional" in spec). |
+| 2 × LaBr₃(Ce) cylinders | ✓ implemented | Bare (no housing per spec). |
+| EJ-309 MPT incl. per-particle yields | ✓ implemented | electron / proton / ion / alpha / deuteron / triton curves. |
+| LaBr₃ MPT incl. per-particle yields | ✓ implemented | Linear curves (single-component, no PSD). Real α/β ≈ 0.3 quenching deferred to refinement pass. |
+| Stilbene material variant (§2) | ✗ deferred | EJ-309 only. |
+| LaBr₃ intrinsic ¹³⁸La / ²²⁷Ac backgrounds (§3) | ✗ deferred | Not modelled; activation path documented in `DefineMaterials()` and below. |
+| Pencil-beam neutron source at z = −100 mm, +ẑ | ✓ implemented | Thermal (0.025 eV). |
+| Physics list (modular, all per §6 modules) | ✓ implemented | Including the two pre-Initialize flags. |
+| Mode dispatch (interactive vs batch) | ✓ implemented | `./nuclear_fission` → OGL via `vis.mac`; `./nuclear_fission run.mac` → headless. |
+
+### Phase B — Sensitive detectors + ground-truth `hits.csv` (PENDING)
+
+`ScintillatorSD`, `HitWriter`, `EventWriter`, the timestamped output
+directory under `data/<UTC>/`, and the wiring from `MyRunAction` /
+`MyEventAction` / `MyDetectorConstruction::ConstructSDandField()`. After
+Phase B the simulation produces one row per (track, sensitive volume)
+entry: `event_id, detector_id, track_id, particle, creator_process,
+entry_time_ns, energy_dep_MeV`.
+
+### Phase C — Fission watcher + `events.csv` (PENDING)
+
+`MySteppingAction` matches the `nFissionHP` post-step process and captures
+fission-vertex time + prompt-n/γ multiplicities + the two fragment PDGs.
+One row per event in `events.csv`.
+
+### Deferred beyond Phase C
+
+- Optical photon scoring (a photocathode surface SD, or scoring photons
+  at the scintillator boundary). The MPT and `SetScintByParticleType`
+  flag are already in place — see `doc/architecture.md` "Optical
+  infrastructure (deferred)" for the flip-on path.
+- SiPM / PMT digitizer model.
+- Trigger scintillator (§1.C).
+- Backing plate (§1.D).
+- Stilbene material variant.
+- LaBr₃ intrinsic backgrounds (¹³⁸La continuous β + 1436 keV γ; ²²⁷Ac
+  α peaks). Activation path: mix natural-La and trace ²²⁷Ac into the
+  LaBr₃ material and let `G4RadioactiveDecayPhysics` handle them, OR
+  fire from a `G4GeneralParticleSource` confined to the LaBr₃ logical
+  volume at the appropriate Bq/cm³ rate.
+- `G4NeutronTrackingCut` raised time limit for delayed-neutron coverage
+  (out of scope for prompt-only window).
 

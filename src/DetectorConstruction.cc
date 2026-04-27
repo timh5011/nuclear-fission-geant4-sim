@@ -154,6 +154,18 @@ void MyDetectorConstruction::DefineMaterials() {
     mptEJ->AddConstProperty("ALPHASCINTILLATIONYIELD1", 0.40);
     mptEJ->AddConstProperty("ALPHASCINTILLATIONYIELD2", 0.60);
 
+    // Deuterons & tritons — can arise from rare n-induced reactions on H/C
+    // (e.g., n + p → d). Geant4's per-particle scintillation requires curves
+    // for every particle that deposits energy here; reuse the proton curve
+    // as a reasonable first approximation (their light output ratios are
+    // close to protons in EJ-309 when matched in dE/dx, per Pôzzi 2004).
+    mptEJ->AddProperty("DEUTERONSCINTILLATIONYIELD", pKE, pY);
+    mptEJ->AddConstProperty("DEUTERONSCINTILLATIONYIELD1", 0.55);
+    mptEJ->AddConstProperty("DEUTERONSCINTILLATIONYIELD2", 0.45);
+    mptEJ->AddProperty("TRITONSCINTILLATIONYIELD", pKE, pY);
+    mptEJ->AddConstProperty("TRITONSCINTILLATIONYIELD1", 0.55);
+    mptEJ->AddConstProperty("TRITONSCINTILLATIONYIELD2", 0.45);
+
     fEJ309->SetMaterialPropertiesTable(mptEJ);
     fEJ309->GetIonisation()->SetBirksConstant(0.11*mm/MeV);
 
@@ -197,6 +209,37 @@ void MyDetectorConstruction::DefineMaterials() {
     mptLaBr->AddConstProperty("SCINTILLATIONTIMECONSTANT1", 16.*ns);
     mptLaBr->AddConstProperty("SCINTILLATIONYIELD1",        1.0);
     // Note: no COMPONENT2 / TIMECONSTANT2 / YIELD2 — single-component.
+
+    // Per-particle yield curves are MANDATORY here (not just nice-to-have).
+    // With G4OpticalParameters::SetScintByParticleType(true) globally on
+    // (required for EJ-309 PSD), G4Scintillation::PostStepDoIt throws the
+    // fatal Scint01 exception the moment any particle deposits energy in a
+    // scintillator that lacks a per-particle yield curve. There is no
+    // fallback to the global SCINTILLATIONYIELD constant in this mode.
+    //
+    // LaBr₃ has no PSD, so for now we use a single linear curve for every
+    // particle type. Real LaBr₃ has α/β ≈ 0.3 (alpha light output is ~30 %
+    // of electron-equivalent at the same energy) and similar quenching for
+    // heavy ions — when photon scoring is enabled, these curves should be
+    // refined per Moszynski 2006 / Saint-Gobain BrilLanCe documentation.
+    std::vector<G4double> labrKE = {
+        0., 0.001*MeV, 0.1*MeV, 1.0*MeV, 5.0*MeV, 10.*MeV
+    };
+    std::vector<G4double> labrY  = {
+        0., 63.,       6300.,   63000.,  315000., 630000.
+    };
+    mptLaBr->AddProperty("ELECTRONSCINTILLATIONYIELD", labrKE, labrY);
+    mptLaBr->AddConstProperty("ELECTRONSCINTILLATIONYIELD1", 1.0);
+    mptLaBr->AddProperty("PROTONSCINTILLATIONYIELD", labrKE, labrY);
+    mptLaBr->AddConstProperty("PROTONSCINTILLATIONYIELD1", 1.0);
+    mptLaBr->AddProperty("IONSCINTILLATIONYIELD", labrKE, labrY);
+    mptLaBr->AddConstProperty("IONSCINTILLATIONYIELD1", 1.0);
+    mptLaBr->AddProperty("ALPHASCINTILLATIONYIELD", labrKE, labrY);
+    mptLaBr->AddConstProperty("ALPHASCINTILLATIONYIELD1", 1.0);
+    mptLaBr->AddProperty("DEUTERONSCINTILLATIONYIELD", labrKE, labrY);
+    mptLaBr->AddConstProperty("DEUTERONSCINTILLATIONYIELD1", 1.0);
+    mptLaBr->AddProperty("TRITONSCINTILLATIONYIELD", labrKE, labrY);
+    mptLaBr->AddConstProperty("TRITONSCINTILLATIONYIELD1", 1.0);
 
     fLaBr3->SetMaterialPropertiesTable(mptLaBr);
     fLaBr3->GetIonisation()->SetBirksConstant(0.00131*mm/MeV);
@@ -256,6 +299,16 @@ G4VPhysicalVolume* MyDetectorConstruction::Construct() {
 // normal to the line back to the origin — maximum projected area for a
 // particle leaving the target.
 //
+// Geant4 rotation gotcha (READ THIS BEFORE EDITING): G4PVPlacement stores
+// the rotation argument as the FRAME rotation (world → local for navigation),
+// not as the OBJECT rotation (local → world for orientation). Confirm via
+// G4VPhysicalVolume::GetObjectRotation() in the Geant4 source — it returns
+// `frot->inverse()`, i.e. Geant4 inverts the stored rotation to obtain the
+// object orientation. So if you mathematically build R such that
+// R · ẑ_local = radial_world (the natural construction), you must invert it
+// before handing it to G4PVPlacement, otherwise the cylinder ends up with
+// its axis at R⁻¹·ẑ, which is the mirror image through the world ẑ-axis.
+//
 // Note on G4RotationMatrix lifetime: G4PVPlacement stores the rotation BY
 // POINTER and does not deep-copy. We must `new` a fresh rotation per
 // placement and not delete it (Geant4 does not free placement rotations
@@ -311,10 +364,10 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
                                     R * sin_t * sin_p,
                                     R * cos_t);
 
-        // Rotation that takes local +ẑ → radial outward direction.
-        // R(angle, axis) where axis = ẑ × radial (unit), angle = ∠(ẑ, radial).
-        // Rodrigues' formula gives R·ẑ = radial. For our θ ∈ {30°, 60°, 90°,
-        // 120°} the cross product is always non-degenerate.
+        // Build the OBJECT rotation R such that R·ẑ_local = radial_world,
+        // using Rodrigues with axis = ẑ × radial and angle = ∠(ẑ, radial).
+        // For our θ ∈ {30°, 60°, 90°, 120°} the cross product is non-degenerate.
+        // Then invert — see the Geant4 frame-vs-object rotation note above.
         const G4ThreeVector zAxis(0., 0., 1.);
         const G4ThreeVector radial  = center.unit();
         const G4ThreeVector axisRaw = zAxis.cross(radial);
@@ -323,6 +376,7 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
             const G4double angle = std::acos(zAxis.dot(radial));
             rot->rotate(angle, axisRaw.unit());
         }
+        rot->invert();   // pass the FRAME rotation, not the object rotation
 
         new G4PVPlacement(rot, center,
                           logicHouse, s.id,
@@ -373,6 +427,8 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
                                     R * sin_t * sin_p,
                                     R * cos_t);
 
+        // Same rotation pattern as EJ-309 — see the comment block above
+        // BuildEJ309Array for the Geant4 frame-vs-object rotation gotcha.
         const G4ThreeVector zAxis(0., 0., 1.);
         const G4ThreeVector radial  = center.unit();
         const G4ThreeVector axisRaw = zAxis.cross(radial);
@@ -381,6 +437,7 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
             const G4double angle = std::acos(zAxis.dot(radial));
             rot->rotate(angle, axisRaw.unit());
         }
+        rot->invert();
 
         new G4PVPlacement(rot, center,
                           logicLaBr, s.id,

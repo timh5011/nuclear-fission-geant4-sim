@@ -377,3 +377,191 @@ The group structure arises from clustering ~100+ individual precursor isotopes b
 Geant4's `G4RadioactiveDecayPhysics` does produce antineutrino tracks internally, but they are immediately killed (zero mean free path in the default configuration) and deposit no energy. They do not appear in the OGL viewer and do not affect any scoring.
 
 The ~12 MeV they carry away is therefore irretrievably lost, which is why the *recoverable* energy per fission is ~190–195 MeV rather than the full ~202 MeV $Q$-value.
+
+---
+
+## Part II — Detector Stage: Scintillator Response
+
+The Phase A implementation places the EJ-309 organic and LaBr$_3$(Ce) inorganic scintillator arrays and attaches full `G4MaterialPropertiesTables` to both materials, including per-particle scintillation yield curves. The processes documented below are now active in the simulation: a charged particle entering one of the scintillator volumes deposits energy via ionization, and `G4Scintillation::PostStepDoIt` produces optical photons whose number is set by the per-particle yield curve and whose time profile is set by the fast/slow time constants.
+
+Optical photons are *generated* by Geant4 but **not yet scored** — there is no photocathode / SiPM model in Phase A. The infrastructure is complete enough that flipping on photon scoring is a one-line change (see `doc/architecture.md` "Optical infrastructure (deferred)"). Sections 6–8 below describe the physics that underpins those values.
+
+**Boundary-crossing note (Source ↔ Detector):** the β$^-$ electrons and delayed γ's documented in Part I §5 are *Source-stage* particles when they're being produced inside the foil, but they cross into the Detector stage the moment they enter a scintillator volume and start depositing energy via the mechanisms below. In Geant4's track stack this is just one continuous tracking step — no special handling is required — but conceptually it is where Source and Detector physics meet, and it is the basis of the delayed-gamma spectroscopy goals in `design.md` §3.
+
+---
+
+### 6. Organic Scintillator Response — EJ-309
+
+**Detector stage.** The EJ-309 array is the workhorse for fast-neutron detection (via proton recoil) and for prompt-γ detection. EJ-309 is a xylene-based liquid scintillator with proprietary fluors and wavelength-shifters; for simulation purposes the H/C composition (H 9.5 %, C 90.5 % by mass at 0.959 g/cm$^3$) is the load-bearing detail.
+
+#### 6.1 Singlet–Triplet Mechanism
+
+Aromatic organic scintillators emit light through the de-excitation of $\pi$-electron states of the solvent's molecules. Two populations of excited states are relevant:
+
+- **Singlet states** ($S_1$, total spin 0) decay rapidly via fluorescence to the ground state $S_0$, emitting a photon. Characteristic lifetime in EJ-309: $\tau_1 \approx 3.5$ ns. This is the **fast component**.
+- **Triplet states** ($T_1$, total spin 1) cannot decay to $S_0$ via single-photon emission (spin-forbidden). They de-excite via *triplet–triplet annihilation* between two neighboring $T_1$ excitons:
+
+$$T_1 + T_1 \;\rightarrow\; S_1^* + S_0$$
+
+producing one excited singlet that subsequently fluoresces. Because this requires two triplets to encounter each other, the effective lifetime depends on triplet density and is much longer: $\tau_2 \approx 32$ ns in EJ-309. This is the **slow component**.
+
+The total scintillation light is therefore a sum of two exponentials:
+
+$$\frac{dN_\gamma}{dt} \;=\; \frac{Y_1 N_\gamma^{\text{tot}}}{\tau_1} e^{-t/\tau_1} \;+\; \frac{Y_2 N_\gamma^{\text{tot}}}{\tau_2} e^{-t/\tau_2}$$
+
+where $Y_1, Y_2$ are the fast and slow yield fractions ($Y_1 + Y_2 = 1$) and $N_\gamma^{\text{tot}}$ is the total photon count.
+
+#### 6.2 Why $Y_1, Y_2$ Depend on Particle Type
+
+The relative population of singlets vs. triplets at the moment of excitation depends on the *linear energy transfer* (LET) of the incident particle, $-dE/dx$:
+
+- **Minimum-ionizing electrons** ($\sim$ 1–2 MeV/(g/cm$^2$) in plastic) excite a relatively dilute column of states. Most are formed as singlets (statistical 1:3 ratio is overcome by selection rules favoring $S_1$); few triplets, so the fast component dominates: in EJ-309, $Y_1 \approx 0.85$, $Y_2 \approx 0.15$ for electrons.
+- **Recoil protons** from $n + p$ elastic scattering (the dominant fast-neutron detection channel in organic scintillators) deposit energy at much higher LET — tens to hundreds of MeV/(g/cm$^2$) at MeV energies. The dense ionization column produces both $S_1$ and $T_1$ populations more efficiently, but more importantly the high triplet density allows triplet–triplet annihilation to convert triplets into delayed singlets that emit on the slow timescale. Net result: a fatter slow tail. In EJ-309 we use $Y_1 \approx 0.55$, $Y_2 \approx 0.45$ for protons.
+- **Heavy ions** (fission fragments, alphas) have even higher LET and produce a still-fatter slow tail: $Y_1 \approx 0.40$, $Y_2 \approx 0.60$.
+
+These are the values populated as `ELECTRONSCINTILLATIONYIELD1/2`, `PROTONSCINTILLATIONYIELD1/2`, `IONSCINTILLATIONYIELD1/2`, and `ALPHASCINTILLATIONYIELD1/2` on the EJ-309 `G4MaterialPropertiesTable`. Citation: F. D. Brooks, *Nucl. Instrum. Meth.* 4, 151 (1959).
+
+#### 6.3 Birks' Law and Light-Output Curves
+
+The total photon yield $N_\gamma^{\text{tot}}$ is *not* linear in deposited energy at high LET, because the same dense ionization column that boosts the slow fraction also quenches some of the available excitation via non-radiative pathways. The standard parameterization is **Birks' formula**:
+
+$$\frac{dN_\gamma}{dx} \;=\; \frac{S \cdot dE/dx}{1 \,+\, kB \cdot dE/dx}$$
+
+where $S$ is the absolute light-yield constant for the material (in photons per unit deposited energy in the linear limit) and $kB$ is the Birks constant (in mm/MeV). For low-LET particles $kB \cdot dE/dx \ll 1$ and the response is linear ($dN_\gamma/dx \approx S \cdot dE/dx$); for high-LET particles $kB \cdot dE/dx \gg 1$ and the response *saturates* at $S/kB$.
+
+For EJ-309 we use:
+
+- $S = 12{,}300$ photons / MeV (electron-equivalent absolute yield)
+- $kB \approx 0.11$ mm/MeV (Eljen datasheet; close to the Brooks-fitted value for similar PVT-based scintillators)
+
+Integrating Birks' law over a particle's track gives the **light-output curve** $L_p(E_p)$ — the number of scintillation photons (or equivalently, MeVee of "electron-equivalent" deposited energy) produced by a particle of initial kinetic energy $E_p$ slowing to rest in the material. For protons in EJ-309 (Enqvist 2013 fit), representative values:
+
+| $E_p$ (MeV) | $L_p$ (photons) | $L_p / E_p$ (MeVee/MeV) |
+|---|---|---|
+| 0.5 | 490 | 0.04 |
+| 1.0 | 1{,}970 | 0.16 |
+| 2.0 | 6{,}150 | 0.25 |
+| 5.0 | 25{,}800 | 0.42 |
+| 10.0 | 68{,}900 | 0.56 |
+| 20.0 | 172{,}000 | 0.70 |
+
+The strong sub-linearity at low $E_p$ — a 1 MeV proton produces only 16 % of the light a 1 MeV electron would — is the fingerprint of Birks quenching and is what makes proton-recoil PSD work: even when the *total* light yield matches a gamma's, the proton's slow-fraction $Y_2$ is much larger.
+
+These tabulated values are attached as the `PROTONSCINTILLATIONYIELD` curve on the EJ-309 MPT (cumulative form: yield from 0 to $E_p$, so per-step photon counts come out as differences). The corresponding heavy-ion and alpha curves are even more strongly quenched.
+
+When `G4OpticalParameters::SetScintByParticleType(true)` is set, Geant4 uses these per-particle curves *directly* and bypasses the unified Birks-saturation pathway. The `SetBirksConstant` call on the EJ-309 material is therefore redundant for scintillation light generation in this configuration (it remains relevant for any code path that asks for visible energy via `G4EmSaturation`). Geant4 emits the informational `Scint02` warning *"Birks Saturation is replaced by ScintillationByParticleType"* at startup to confirm this branch is active.
+
+Citations: Brooks, NIM 4 (1959) 151; A. Enqvist *et al.*, *Nucl. Instrum. Meth.* A 715, 79 (2013); S. A. Pôzzi *et al.*, on the EJ-301/NE-213 series.
+
+---
+
+### 7. Inorganic Scintillator Response — LaBr$_3$(Ce)
+
+**Detector stage.** The LaBr$_3$(Ce) detectors at backward angles are the gamma-spectroscopy arm of the system: they exploit the high effective Z of the lattice ($Z_{\text{eff}} \approx 46$) for efficient photopeak detection, and the very narrow intrinsic resolution (~2.8 % FWHM at 662 keV) for line identification.
+
+#### 7.1 Activator-Mediated Mechanism
+
+Unlike organic scintillators, where light arises from de-excitation of solvent molecular states, inorganic scintillators emit through a **doped-activator** mechanism in a crystalline host:
+
+1. Ionizing radiation creates electron–hole pairs in the LaBr$_3$ conduction/valence bands.
+2. Charge carriers migrate through the lattice and are captured at Ce$^{3+}$ activator sites.
+3. The Ce activator is excited to the $5d$ configuration: Ce$^{3+}$ + $e^-$ + hole $\rightarrow$ Ce$^{3+*}(5d)$.
+4. The excited activator de-excites via the dipole-allowed $5d \rightarrow 4f$ transition, emitting a photon at $\sim 380$ nm.
+
+This pathway has a **single intrinsic decay constant** — the $5d$ lifetime, $\tau \approx 16$ ns — with no slow-component analog of the organic singlet–triplet system. As a result, **LaBr$_3$ has no PSD capability**: the pulse shape is invariant under particle type (only the total light yield differs).
+
+In the LaBr$_3$ MPT we therefore set only `SCINTILLATIONCOMPONENT1`, `SCINTILLATIONTIMECONSTANT1 = 16 ns`, and `SCINTILLATIONYIELD1 = 1.0` — no second component, no $Y_1/Y_2$ split.
+
+#### 7.2 Light Yield and Quenching
+
+Total absolute yield: $S = 63{,}000$ photons / MeV — about $5\times$ that of EJ-309. Combined with the high Z, this is what drives LaBr$_3$'s photopeak resolution.
+
+The Birks constant for inorganic scintillators is much smaller than for organics because the lattice de-excitation pathway is less sensitive to local LET density:
+
+$$kB_{\text{LaBr}_3} \approx 1.3 \times 10^{-3} \text{ mm/MeV}$$
+
+(Moszynski 2006). For electrons at MeV scale, $kB \cdot dE/dx \ll 1$ and the response is essentially **linear in deposited energy**.
+
+For heavy charged particles the response is nonlinear, but the deviation is described empirically by the so-called *alpha–beta ratio*, the ratio of light output for an alpha to that of an electron at the same kinetic energy. For LaBr$_3$(Ce), $\alpha/\beta \approx 0.3$ at MeV energies. In Phase A the LaBr$_3$ per-particle yield curves are kept linear (same as electrons) because no photon-level scoring is yet active and the simplification is harmless; refinement to actual $\alpha/\beta < 1$ curves is a later-pass detail flagged in `design.md` §3 and `architecture.md` Intrinsic-background TODO context.
+
+#### 7.3 Energy Resolution and the Photon-Counting Limit
+
+The intrinsic energy resolution of LaBr$_3$(Ce) is dominated by Poisson statistics on the number of detected scintillation photons:
+
+$$\frac{\sigma_E}{E} \;\propto\; \frac{1}{\sqrt{N_\gamma}}$$
+
+For $E = 662$ keV (the standard $^{137}$Cs calibration line) the total number of photons produced is $N_\gamma = 0.662 \times 63{,}000 \approx 41{,}500$. After photodetector quantum efficiency, light collection, and intrinsic non-proportionality, an experimentally observed FWHM of $\sim$2.8 % is achievable, which is among the best of any commercially available inorganic scintillator. PMTs and SiPMs typically deliver ~30–40 % photon detection efficiency at the 380 nm emission wavelength.
+
+This resolution is what enables identification of specific fission-product gamma lines (e.g., $^{140}$La at 1596 keV, $^{95}$Zr at 757 keV, $^{137}$Cs at 662 keV). **In Phase A this is documented but not yet scored** — there is no photodetector model and `hits.csv` records only the energy deposited per step, not the smeared photon count.
+
+---
+
+### 8. Pulse Shape Discrimination (PSD)
+
+**Detector stage.** PSD is the technique used to distinguish neutron events (proton recoils in the EJ-309) from gamma events (Compton electrons in the EJ-309) on a per-pulse basis. It uses *only the shape* of the scintillation pulse from a single detector — no external timing reference is required, no second detector, no coincidence.
+
+This is the central distinction between PSD and **time-of-flight (TOF)**: TOF measures particle *energy* by timing arrival relative to a fission-instant reference (in a real experiment, a trigger scintillator coupled to the foil; in simulation, the Geant4 fission vertex time). PSD identifies particle *type*. The two are complementary: PSD says "this is a neutron"; TOF says "this neutron has $E_n =$ such-and-such".
+
+#### 8.1 Tail-to-Total Ratio
+
+The standard PSD figure of merit is the **tail-to-total integral ratio**:
+
+$$\text{PSD} \;=\; \frac{Q_{\text{tail}}}{Q_{\text{total}}} \;=\; \frac{\int_{t_0 + t_d}^{t_0 + T} V(t) \, dt}{\int_{t_0}^{t_0 + T} V(t) \, dt}$$
+
+where:
+
+- $V(t)$ is the digitizer-recorded voltage waveform (proportional to scintillation light);
+- $t_0$ is the pulse start, identified by a leading-edge or constant-fraction discriminator on the rising edge — this is the *intrinsic* timing reference;
+- $t_d$ is the tail-start delay, typically chosen at $\sim 30$ ns past $t_0$ so the fast component (3.5 ns time constant) has decayed below ~$e^{-9} \approx 0.01$% of its peak;
+- $T$ is the integration window, typically a few hundred ns to capture most of the slow component.
+
+Substituting the two-exponential pulse shape from §6.1, integrated from the pulse start:
+
+$$Q_{\text{total}}(T) \;=\; N_\gamma^{\text{tot}} \left[ Y_1 (1 - e^{-T/\tau_1}) + Y_2 (1 - e^{-T/\tau_2}) \right]$$
+
+$$Q_{\text{tail}}(t_d, T) \;=\; N_\gamma^{\text{tot}} \left[ Y_1 (e^{-t_d/\tau_1} - e^{-T/\tau_1}) + Y_2 (e^{-t_d/\tau_2} - e^{-T/\tau_2}) \right]$$
+
+In the limits $\tau_1 \ll t_d \ll \tau_2 \ll T$ (a good approximation for EJ-309's 3.5 ns / 32 ns / typical 30 ns / typical 400 ns), the fast contribution to $Q_{\text{tail}}$ vanishes and the slow contribution to $Q_{\text{total}}$ saturates, giving the simple analytic limit:
+
+$$\frac{Q_{\text{tail}}}{Q_{\text{total}}} \;\approx\; \frac{Y_2}{Y_1 + Y_2} \;=\; Y_2$$
+
+(since we normalize $Y_1 + Y_2 = 1$). For EJ-309 with the values from §6.2 this gives:
+
+| Particle | $Y_2$ | Expected PSD ratio |
+|---|---|---|
+| Electron / γ | 0.15 | $\sim 0.15$ |
+| Proton (recoil from neutron) | 0.45 | $\sim 0.45$ |
+| Alpha / heavy ion | 0.60 | $\sim 0.60$ |
+
+In the experimentally observed scatter plot of $Q_{\text{tail}}/Q_{\text{total}}$ vs. $Q_{\text{total}}$ (or equivalently vs. light output), gamma events form a narrow band near 0.15 and neutron events form a narrow band near 0.45 — well-separated, with overlap only at very low light output where the photon-counting Poisson noise smears the bands together. The "figure of merit" of a PSD measurement is the band separation in units of the bands' widths.
+
+#### 8.2 What PSD Does Not Do
+
+It is worth being explicit about what PSD does **not** measure, because PSD and TOF are routinely confused in casual discussion:
+
+- It does **not** measure neutron kinetic energy. That comes from TOF: $E_n = \frac{1}{2} m_n (d/t)^2$ where $d$ is the flight path and $t$ is the time between fission and detector hit.
+- It does **not** require a coincidence with another detector or with a trigger. The pulse-start discriminator on the EJ-309 channel itself provides the timing reference for the integration windows.
+- It does **not** require a fission trigger scintillator. In simulation the fission instant is known exactly from the Geant4 vertex; in a real experiment, you'd need a trigger for TOF (and `design.md` §1.C reserves that role), but PSD alone runs on a single EJ-309 channel.
+
+#### 8.3 Phase A Status
+
+Phase A populates all the inputs PSD needs — the fast/slow time constants, the per-particle $Y_1/Y_2$ ratios, and the light-output curves — on the EJ-309 `G4MaterialPropertiesTable`. Optical photons are *generated* by `G4Scintillation::PostStepDoIt` whenever a charged particle deposits energy in the EJ-309 volume, and they propagate (refraction at boundaries via RINDEX, attenuation via ABSLENGTH) through the geometry. They are **not yet scored**: there is no photocathode surface, no waveform digitizer, no $Q_{\text{tail}}/Q_{\text{total}}$ extraction. The `hits.csv` produced by Phase B records the *ground-truth* energy depositions and entry times — the inputs from which a Phase D PSD pipeline could later synthesize digitizer waveforms.
+
+---
+
+### 9. Optical Photon Transport (deferred scoring)
+
+For completeness, the optical-photon physics that *is* active in Phase A:
+
+- **Refractive index** sets boundary refraction at scintillator–air interfaces. Set to 1.57 for EJ-309 and 1.9 for LaBr$_3$(Ce) — flat across the photon-energy grid because the materials' published dispersion is small over the visible band.
+- **Bulk absorption length** governs how far photons propagate before being absorbed in the bulk material. Set to 100 cm for EJ-309 and 50 cm for LaBr$_3$ — order-of-magnitude placeholders pending wavelength-resolved data. Until photon scoring is enabled this value is consequence-free; once it is, refining `ABSLENGTH` matters for predicting light-collection efficiency.
+- **Emission spectrum** (`SCINTILLATIONCOMPONENT1`/`COMPONENT2`) is the spectral distribution of the scintillation photon energies. Coarse Gaussian-like sampling around the 424 nm (EJ-309) and 380 nm (LaBr$_3$) peaks is currently used — adequate when photons aren't wavelength-tagged at scoring.
+- **No Cherenkov radiation**: not configured in the materials (no `RINDEX` curve covering the high-energy region where charged particles would exceed the speed of light in the medium). For our energy regime — fission fragments (β $\approx$ 0.05) and MeV-scale electrons (β $\approx$ 0.94 vs. $1/n \approx 0.64$ in EJ-309) — Cherenkov light from electrons could in principle contribute a few photons but is dwarfed by scintillation; turning Cherenkov off in `G4OpticalPhysics` is appropriate for a scintillation-dominated detector.
+
+When Phase B+ enables photon scoring, the natural addition to the pipeline is:
+
+1. A `G4OpticalSurface` on the inner face of each EJ-309 housing (specular reflectance for the polished aluminum case, or a wrapped-Tyvek diffuser model — to be chosen per the photodetector's optical assembly).
+2. A photocathode logical volume at the back of each scintillator with a thin sensitive layer; the Phase B `ScintillatorSD::ProcessHits` short-circuit on `G4OpticalPhoton` is then removed, and a separate SD on the photocathode counts arrivals.
+3. A SiPM / PMT response model in offline analysis applied to the recorded photon arrival times — PDE, dark count rate, crosstalk, afterpulsing — to convert ground-truth photon arrivals into realistic digitizer waveforms.
+
+The MPT entries already in place do not need to be revisited for any of this — the per-particle yield curves and time constants are the inputs all photon-level analyses will consume.

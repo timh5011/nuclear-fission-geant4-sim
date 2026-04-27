@@ -14,4 +14,18 @@
 /vis/viewer/set/autoRefresh true
 /vis/scene/add/trajectories smooth
 /vis/scene/add/hits
+
+# Persist trajectories across events and runs. Default is "refresh", which
+# wipes the scene after each event (so only the last event's tracks remain)
+# and again at end-of-run. We want accumulated tracks so /run/beamOn N draws
+# all N events, and successive /run/beamOn calls add to the picture.
+#
+# The N argument to endOfEventAction is the maximum number of events worth
+# of trajectories to retain. The vis manager has an internal safety cap of
+# 100 if you don't set N explicitly — at /run/beamOn 2000 you'd lose all
+# but the last 100 events. We set 10000 to comfortably cover the typical
+# "few thousand events to spot a fission" use case.
+/vis/scene/endOfEventAction accumulate 10000
+/vis/scene/endOfRunAction accumulate
+
 /tracking/verbose 0
