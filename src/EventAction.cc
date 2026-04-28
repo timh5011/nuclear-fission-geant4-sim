@@ -2,6 +2,7 @@
 
 #include "CsvWriter.hh"
 #include "RunAction.hh"
+#include "SteppingAction.hh"
 
 #include "G4Event.hh"
 
@@ -17,6 +18,7 @@ MyEventAction::~MyEventAction() = default;
 void MyEventAction::BeginOfEventAction(const G4Event* event) {
     fRecord = EventRecord{};
     fRecord.eventId = event->GetEventID();
+    if (fSteppingAction) fSteppingAction->SetEventRecord(&fRecord);
 }
 
 // -----------------------------------------------------------------------------

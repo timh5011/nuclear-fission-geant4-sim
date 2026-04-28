@@ -494,28 +494,36 @@ recorded here. See `doc/architecture.md` for the code-flow side and
 | `EventRecord` struct (with `std::optional<>` Phase C fields) | ✓ implemented | Empty optionals serialize to empty CSV cells. |
 | `MyDetectorConstruction::ConstructSDandField()` | ✓ implemented | Registers SDs via `G4SDManager::AddNewDetector` + `SetSensitiveDetector` by logical-volume name. |
 | `MyRunAction` rewrite (writers, output dir, SD injection) | ✓ implemented | Walks up from CWD to find repo-root marker `nuclear-fission.cc`; creates `data/<UTC-YYYYMMDDTHHMMSS>/`; injects `HitWriter*` into both SDs by name. |
-| `MyEventAction` rewrite (`EventRecord` + EoEvent write) | ✓ implemented | Constructor takes `(MySteppingAction*, MyRunAction*)`; resets fRecord at BoEvent; writes one row at EoEvent. Phase C metadata stays empty. |
+| `MyEventAction` rewrite (`EventRecord` + EoEvent write) | ✓ implemented | Constructor takes `(MySteppingAction*, MyRunAction*)`; resets fRecord and propagates `&fRecord` to SteppingAction at BoEvent; writes one row at EoEvent. |
 | `Action.cc` reorder (RunAction first) | ✓ implemented | Required so EventAction can hold the RunAction pointer. |
 
 After Phase B the simulation produces one row per (track, sensitive volume)
 entry in `hits.csv`: `event_id, detector_id, track_id, particle,
 creator_process, entry_time_ns, energy_dep_MeV`. `events.csv` carries one
-row per event with `event_id` filled and the fission-metadata columns
-empty (filled in Phase C).
+row per event with `event_id` filled; the fission-metadata columns stay
+empty until Phase C populates them.
 
-### Phase C — Fission watcher + `events.csv` metadata (PENDING)
+### Phase C — Fission watcher + `events.csv` metadata (DONE)
 
-`MySteppingAction::UserSteppingAction` matches the HP fission post-step
-process and captures fission-vertex time + prompt-n/γ multiplicities + the
-two fragment PDGs into `*fEventRecord`. `MyEventAction::BeginOfEventAction`
-will propagate `&fRecord` to the SteppingAction at event start.
+| Component | Status | Notes |
+|---|---|---|
+| `MySteppingAction::UserSteppingAction` (fission watcher) | ✓ implemented | Matches post-step process `"nFissionHP"`; on the first match per event captures `fissionTimeNs`, counts neutron / gamma secondaries from `step->GetSecondaryInCurrentStep()`, and records the first two ion PDGs as `fragmentA_PDG` / `fragmentB_PDG`. |
+| `EventRecord*` propagation in `MyEventAction::BeginOfEventAction` | ✓ implemented | One-line `fSteppingAction->SetEventRecord(&fRecord)` after the per-event reset. |
+| Single-shot run-log verification print | ✓ implemented | `G4cout` of the matched process name + vertex time on the first fission step of every run — permanent self-check against the silent-zero-fission failure mode. |
 
-> **Process-name caveat:** plan.md cited `"nFissionHP"` (per
-> `G4HadronPhysicsQGSP_BIC_HP.cc`), but `G4NeutronFissionProcess.hh:57` in
-> v11.4.0 shows the constructor default is `"nFission"`. Add a one-line
-> `G4cout` of the matched process name in an actual fission step to
-> confirm the live name before wiring the watcher — silent zero-fission
-> logging is the failure mode.
+Verified at runtime (100 k events, 165 fissions): mean prompt-neutron
+multiplicity 2.59 (literature ν̄_p ≈ 2.43), mean prompt-gamma multiplicity
+9.07 (literature ~7–10), fission times ≈ 45.7 µs (matches thermal-neutron
+flight time over 100 mm), fragment PDGs in the standard light-mass / heavy-mass
+peaks (Z×A ≈ 35×95 / 55×140).
+
+> **Process-name resolution.** Plan.md cited `"nFissionHP"` (per
+> `G4HadronPhysicsQGSP_BIC_HP.cc:139`); `G4NeutronFissionProcess.hh:57`
+> shows the constructor default is `"nFission"`, but the QGSP_BIC_HP
+> physics list overrides it. Confirmed at runtime: the live name is
+> `"nFissionHP"`. The single-shot log print stays in place so any future
+> physics-list change that quietly renames the process is immediately
+> visible in the run log.
 
 ### Deferred beyond Phase C
 

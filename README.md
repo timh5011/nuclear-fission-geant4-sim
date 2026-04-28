@@ -27,7 +27,7 @@ Re-run `cmake ..` (not just `make`) after adding source files or editing a `.mac
 Each `/run/beamOn` writes a timestamped subdirectory under `data/` at the repo root:
 
 - `hits.csv` — one row per non-optical-photon track entry into a sensitive scintillator volume (with nonzero edep). Columns: `event_id, detector_id, track_id, particle, creator_process, entry_time_ns, energy_dep_MeV`.
-- `events.csv` — one row per event. Columns: `event_id, fission_time_ns, n_prompt_neutrons, n_prompt_gammas, fragment_A_PDG, fragment_B_PDG`. Fission-metadata columns are filled by Phase C; in the current build they are empty.
+- `events.csv` — one row per event. Columns: `event_id, fission_time_ns, n_prompt_neutrons, n_prompt_gammas, fragment_A_PDG, fragment_B_PDG`. Fission-metadata columns are filled by `MySteppingAction` for every event in which the foil fissions (sub-1% of events at thermal × 0.5 µm); non-fission events leave those columns as empty cells.
 
 ## What you'll see in the OGL viewer
 
@@ -38,4 +38,4 @@ Green = neutral (prompt fission neutrons + gammas, escaping to the world boundar
 - [`doc/design.md`](doc/design.md) — detector + DAQ design spec and per-component implementation status.
 - [`doc/architecture.md`](doc/architecture.md) — Geant4 code structure, init pipeline, per-event pipeline, CSV output / run lifecycle.
 - [`doc/theory.md`](doc/theory.md) — physics of every process the sim touches.
-- [`doc/plan.md`](doc/plan.md) — phased implementation plan (Phases A + B done; Phase C is the fission watcher).
+- [`doc/plan.md`](doc/plan.md) — phased implementation plan (Phases A + B + C all landed).

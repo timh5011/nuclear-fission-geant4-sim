@@ -2,7 +2,7 @@
 
 A high-level map of how this simulation is wired together and the chronological order in which the Geant4 framework drives it. This document is about *program structure and control flow*, not the physics models — for the physics, see `doc/theory.md` and the block comments in `include/Physics.hh` / `src/DetectorConstruction.cc`.
 
-After **Phases A + B** the simulation builds, runs, and writes CSV output. `./nuclear_fission` opens the OGL viewer with the full detector array; `./nuclear_fission run.mac` runs headless and produces `data/<UTC>/{hits.csv, events.csv}` at the repo root. `MyRunAction` and `MyEventAction` carry their full Phase B logic. `MySteppingAction` remains an empty shell — Phase C fills it with the fission watcher that populates the metadata columns of `events.csv`.
+After **Phases A + B + C** the simulation builds, runs, and writes complete CSV output. `./nuclear_fission` opens the OGL viewer with the full detector array; `./nuclear_fission run.mac` runs headless and produces `data/<UTC>/{hits.csv, events.csv}` at the repo root. `MyRunAction`, `MyEventAction`, and `MySteppingAction` are all live — `MySteppingAction` is the fission watcher that populates the metadata columns of `events.csv` for every event in which the foil fissions.
 
 ## Component layout
 
@@ -41,12 +41,14 @@ nuclear-fission.cc                  main() — owns G4RunManager, sets two pre-I
     ├── MyPrimaryGenerator          single 0.025 eV neutron at (0, 0, -100 mm) → +ẑ
     ├── MyRunAction                 owns HitWriter + EventWriter; BeginOfRunAction creates
     │                               data/<UTC>/, opens writers, injects HitWriter* into SDs
-    ├── MyEventAction               holds EventRecord; BoEvent resets it + sets eventId;
-    │                               EoEvent writes one row to events.csv (Phase C will
-    │                               propagate &fRecord to SteppingAction at BoEvent)
-    └── MySteppingAction            stub — Phase C: matches the HP fission post-step process
-                                            to capture fission-vertex time + prompt-n/γ
-                                            multiplicities + two fragment PDGs into *fRecord
+    ├── MyEventAction               holds EventRecord; BoEvent resets it, sets eventId,
+    │                               and hands &fRecord to SteppingAction so the fission
+    │                               watcher knows where to write; EoEvent writes one row
+    │                               to events.csv (empty fission cells for non-fission events)
+    └── MySteppingAction            fission watcher — matches the HP fission post-step
+                                    process ("nFissionHP") and on the first match per event
+                                    captures fission-vertex time + prompt-n/γ multiplicities
+                                    + two fragment PDGs into *fEventRecord
 ```
 
 The four user classes are not peers of `main()`; they are *callbacks* the kernel invokes at well-defined points. Understanding the architecture is mostly understanding *when* the kernel calls each of them.
@@ -64,7 +66,7 @@ Triggered when `nuclear-fission.cc` runs.
    1. `MyDetectorConstruction::DefineMaterials()` was already run in the constructor (`src/DetectorConstruction.cc:48`), so material pointers exist.
    2. `MyDetectorConstruction::Construct()` is called by the kernel — builds the world `G4Box`, the U-235 foil `G4Tubs`, then dispatches to `BuildEJ309Array()` and `BuildLaBr3Array()` for the two scintillator arrays. Each array helper places one shared logical volume per material and uses `copy_no` on each placement to identify the detector (0..7 for EJ-309, 0..1 for LaBr₃) — Phase B's sensitive detector reads this `copy_no` to map to a `detector_id` string.
    3. `MyPhysicsList` constructs all particles, registers each module's processes against those particles, and applies production cuts. `G4OpticalPhysics` picks up the `SetScintByParticleType` flag here.
-   4. `MyActionInitialization::Build()` is called — instantiates the generator and the four action classes and hands them to the kernel via `SetUserAction()` (`src/Action.cc`). Construction order matters: `MyRunAction` is built first so `MyEventAction` can take a pointer to it (for `EventWriter` access at end-of-event). `MyEventAction` also takes a `MySteppingAction*` — currently unused in Phase B, kept so the constructor signature won't churn at the Phase C boundary when the fission watcher needs `EventRecord*` propagation.
+   4. `MyActionInitialization::Build()` is called — instantiates the generator and the four action classes and hands them to the kernel via `SetUserAction()` (`src/Action.cc`). Construction order matters: `MyRunAction` is built first so `MyEventAction` can take a pointer to it (for `EventWriter` access at end-of-event). `MyEventAction` also takes a `MySteppingAction*` so it can hand the per-event `EventRecord*` to the fission watcher in `BeginOfEventAction`.
    5. After Initialize() returns, `MyDetectorConstruction::ConstructSDandField()` has been called automatically by the kernel — `EJ309SD` and `LaBr3SD` are registered with `G4SDManager` and attached to their logical volumes. They exist with `fHitWriter == nullptr` until `MyRunAction::BeginOfRunAction` injects the writer pointer at the start of the first run.
 5. **Mode dispatch** (`nuclear-fission.cc:68-79`) — the binary serves two workflows from one entry point:
    - `argc >= 2`: treat `argv[1]` as a macro path, run `/control/execute <path>` headless, exit. No vis, no UI prompt. This is the production path that produces CSV output.
@@ -80,7 +82,7 @@ Inline code comments at the rotation block document this.
 
 ## Pipeline — per `/run/beamOn N` (driven by the kernel)
 
-Once the UI session is live (or a batch macro is executing) and `/run/beamOn N` fires, the run manager enters the nested loop below. The annotations show what each hook does as of Phases A+B; Phase C entries flag what's still empty.
+Once the UI session is live (or a batch macro is executing) and `/run/beamOn N` fires, the run manager enters the nested loop below. All four user-action hooks carry their full Phases A + B + C logic.
 
 ```
 /run/beamOn N
@@ -96,7 +98,7 @@ Once the UI session is live (or a batch macro is executing) and `/run/beamOn N` 
 │   ├── MyEventAction::BeginOfEventAction(event)
 │   │       → resets EventRecord (all optionals → nullopt)
 │   │       → sets fRecord.eventId = event->GetEventID()
-│   │       [Phase C: also propagates &fRecord to SteppingAction]
+│   │       → fSteppingAction->SetEventRecord(&fRecord)
 │   │
 │   ├── MyPrimaryGenerator::GeneratePrimaries(event)
 │   │       → particle gun fires one 0.025 eV neutron from (0,0,-100 mm) along +ẑ
@@ -115,9 +117,15 @@ Once the UI session is live (or a batch macro is executing) and `/run/beamOn N` 
 │   │   │       │        creator_process, particle name (G4IonTable for ions)
 │   │   │       │      → every step: accumulate edep
 │   │   │       │
-│   │   │       └── MySteppingAction::UserSteppingAction(step)   [empty — Phase C: matches
-│   │   │                                                         the HP fission process to
-│   │   │                                                         populate *fEventRecord]
+│   │   │       └── MySteppingAction::UserSteppingAction(step)
+│   │   │              → if post-step process == "nFissionHP" and we haven't already
+│   │   │                captured a fission this event:
+│   │   │                  fissionTimeNs = postStep->GetGlobalTime() / ns
+│   │   │                  iterate step->GetSecondaryInCurrentStep():
+│   │   │                    neutrons → ++nPromptNeutrons
+│   │   │                    gammas   → ++nPromptGammas
+│   │   │                    ions     → fragmentA_PDG / fragmentB_PDG (first two)
+│   │   │              → all five values written into *fEventRecord
 │   │   │
 │   │   └── repeat until track ends (stops, escapes world, or is killed)
 │   │
@@ -141,9 +149,11 @@ Two non-obvious points about this loop:
 
 ## Phase status and remaining stubs
 
-Phases A + B are landed. The single remaining user-action stub is `MySteppingAction` — its `UserSteppingAction` override is still commented out and the file is otherwise empty. Phase C un-comments the override and matches the HP fission process to populate the optional fields of `*fEventRecord`. `MyEventAction::BeginOfEventAction` will then add a `fSteppingAction->SetEventRecord(&fRecord)` call so the watcher knows where to write. No new translation units are needed for Phase C.
+Phases A + B + C are landed. All four user-action classes are live: `MyDetectorConstruction`, `MyRunAction`, `MyEventAction`, and `MySteppingAction` carry their full implementations. Both CSVs are fully populated: `events.csv` rows in fission events have all six columns filled; non-fission events have only `event_id` (the rest are empty cells). The `data/<UTC>/` output tree, `ScintillatorSD` ground-truth scoring, the Tyvek/PTFE optical skin, and the fission watcher all work end-to-end.
 
-`G4AnalysisManager` is `#include`d in a few headers from earlier scaffolding. Phase B uses a custom `CsvWriter` instead, so those includes are unused — they could be removed in a future cleanup pass.
+`G4AnalysisManager` is `#include`d in a few headers from earlier scaffolding. The custom `CsvWriter` is used instead, so those includes are unused — they could be removed in a future cleanup pass.
+
+Deferred items (not stubs — explicit non-goals): photon scoring, SiPM/PMT model, trigger scintillator, intrinsic LaBr₃ backgrounds, multi-fission-per-event handling, delayed-neutron / delayed-gamma counting. See `doc/design.md` and `doc/plan.md` for the activation paths.
 
 `CMakeLists.txt` globs `src/*.cc` and `include/*.hh`, so new files are picked up automatically — but adding files (or editing a `.mac`) requires re-running `cmake`, not just `make`.
 
@@ -172,9 +182,9 @@ events.csv:  event_id, fission_time_ns, n_prompt_neutrons, n_prompt_gammas,
 
 `hits.csv` rows: one per `(track, sensitive-volume)` entry with nonzero energy deposit. Pure-transit entries (zero edep) are dropped — they record a boundary cross with no physics content.
 
-`events.csv` rows: one per Geant4 event. In Phase B only `event_id` is filled; the fission-metadata columns serialize as empty cells (consecutive commas) until Phase C wires the fission watcher.
+`events.csv` rows: one per Geant4 event. Fission-metadata columns are filled by `MySteppingAction` for every event in which the foil fissions; non-fission events leave them as empty cells (consecutive commas). At thermal × 0.5 µm foil the fission probability is ~10⁻³ per neutron, so the vast majority of rows in a typical run carry only `event_id`.
 
-`WriteRow` on both writers is mutex-guarded. In serial Phase B the lock is uncontended and effectively free; the guard is forward-compat for an eventual MT switch.
+`WriteRow` on both writers is mutex-guarded. In current serial runs the lock is uncontended and effectively free; the guard is forward-compat for an eventual MT switch.
 
 ## Mode dispatch
 
