@@ -12,13 +12,16 @@ The application is a thin shell on top of the Geant4 user-application pattern. `
 nuclear-fission.cc                  main() — owns G4RunManager, sets two pre-Initialize flags,
 │                                   then dispatches to interactive or headless mode (argc-based)
 │
-├── MyDetectorConstruction          geometry + materials
-│   ├── DefineMaterials()           air, U-235, EJ-309, LaBr3(Ce), aluminum
+├── MyDetectorConstruction          geometry + materials + optical surfaces
+│   ├── DefineMaterials()           air, U-235, EJ-309, LaBr3(Ce), aluminum;
+│   │                                  + shared "TyvekWrap" G4OpticalSurface
 │   │                                — full G4MaterialPropertiesTables on both scintillators,
 │   │                                  per-particle scintillation yields populated for PSD
 │   ├── Construct()                 world (2 m³ air) + foil (20 mm × 0.5 µm U-235 disc)
 │   ├── BuildEJ309Array()           8 × EJ-309 cylinders + 1 mm Al housings, r=500 mm forward
+│   │                                  + G4LogicalSkinSurface(EJ309LV, TyvekWrap)
 │   └── BuildLaBr3Array()           2 × LaBr3(Ce) cylinders, r=300 mm at θ=135°
+│                                      + G4LogicalSkinSurface(LaBr3LV, TyvekWrap)
 │
 ├── MyPhysicsList                   header-only modular physics list (EM-option4, HP neutron,
 │                                   optical, ion, decay, radioactive decay)
@@ -114,13 +117,15 @@ Two non-obvious points about this loop:
 
 Phase B adds three new translation units (`ScintillatorSD.{hh,cc}`, `CsvWriter.{hh,cc}`) plus a `ConstructSDandField()` method on `MyDetectorConstruction` that attaches `ScintillatorSD` instances to the `EJ309LV` and `LaBr3LV` logical volumes. `CMakeLists.txt` globs `src/*.cc` and `include/*.hh` so new files are picked up automatically — but adding files (or editing a `.mac`) requires re-running `cmake`, not just `make`.
 
-## Optical infrastructure (deferred)
+## Optical infrastructure
 
-The full scintillation-photon machinery is *armed* but not yet *used*:
+Scintillation, transport, and reflection are **active** in Phase A; only photon
+*scoring* is deferred. Concretely:
 
-- **Generated**: `G4OpticalPhysics` is registered in the physics list, `SetScintByParticleType(true)` is set, and both EJ-309 and LaBr₃ carry full `G4MaterialPropertiesTables` with refractive index, absorption length, emission spectrum, time constants, and per-particle yield curves. So scintillation photons *are* produced by `G4Scintillation::PostStepDoIt` whenever a charged particle deposits energy in a scintillator volume.
-- **Not scored**: there is no photocathode / SiPM / PMT model and no sensitive detector for optical photons. They propagate through the volume (refraction at boundaries via the RINDEX) and are eventually absorbed (via ABSLENGTH) or escape into the air world. They do **not** appear in `hits.csv`.
-- **Phase B explicitly skips them**: `ScintillatorSD::ProcessHits` will short-circuit for `track->GetParticleDefinition() == G4OpticalPhoton::Definition()` — one line. To enable photon scoring later, remove that early-return, decide where photons should be tallied (a photocathode-surface SD, or a separate "photons-arriving" counter on the scintillator volume), and add the corresponding rows/columns to the output. Materials and the per-particle flag do not need to be revisited.
+- **Generated**: `G4OpticalPhysics` is registered in the physics list, `SetScintByParticleType(true)` is set, and both EJ-309 and LaBr₃ carry full `G4MaterialPropertiesTables` with refractive index, absorption length, emission spectrum, time constants, and per-particle yield curves. Scintillation photons *are* produced by `G4Scintillation::PostStepDoIt` whenever a charged particle deposits energy in a scintillator volume.
+- **Reflected**: a single shared `G4OpticalSurface` named `"TyvekWrap"` (`unified` model, `dielectric_dielectric` type, `groundfrontpainted` finish, `REFLECTIVITY = 0.98` flat across 1.5–4.5 eV) is built in `DefineMaterials()` and attached as a `G4LogicalSkinSurface` to **both** `EJ309LV` (in `BuildEJ309Array`) and `LaBr3LV` (in `BuildLaBr3Array`). The `groundfrontpainted` finish makes the wrap behave as a Lambertian diffuse reflector with no transmission — photons hitting any face of any scintillator reflect with 98 % probability, ignoring the neighbor material entirely. This is real, running machinery; the visible effect is suppressed only because photons aren't scored. Skin (vs. border) is the right choice here because the wrap is uniform on every face of every cell and one registration covers all 8 EJ-309 placements automatically. When a PMT/SiPM coupling face is eventually added, override that single face with a `G4LogicalBorderSurface`; the skin keeps handling the other faces.
+- **Not scored**: there is no photocathode / SiPM / PMT model and no sensitive detector for optical photons. After scintillation + reflection they are eventually absorbed (2 % per skin interaction, plus bulk absorption via `ABSLENGTH`) or escape into the air world (only via faces with no skin — i.e. nowhere, in the current geometry). They do **not** appear in `hits.csv`.
+- **Phase B explicitly skips them**: `ScintillatorSD::ProcessHits` will short-circuit for `track->GetParticleDefinition() == G4OpticalPhoton::Definition()` — one line. To enable photon scoring later, remove that early-return, decide where photons should be tallied (a photocathode-surface SD, or a separate "photons-arriving" counter on the scintillator volume), and add the corresponding rows/columns to the output. Materials, the per-particle flag, and the reflective skins do not need to be revisited.
 
 ## Intrinsic-background TODO
 

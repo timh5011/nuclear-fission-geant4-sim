@@ -154,7 +154,39 @@ series). See `doc/theory.md` §6 for full derivation.
 | Shape | Right circular cylinder (G4Tubs) | Standard detector form factor |
 | Diameter | 50 mm (2 inches) | — |
 | Length | 50 mm (2 inches) | — |
-| Housing | 1 mm aluminum shell | Built in Phase A (was "optional" in spec; now required) |
+| Housing | 1 mm aluminum shell | Structural / light-tight outer can; **not** an optical reflector. |
+
+The aluminum housing is a structural / environmental shell only — it contains
+the EJ-309 liquid, blocks ambient room light from reaching the (future) PMT
+photocathode, and provides a 1 mm passive absorber/scatterer in front of the
+active volume. It is **not** a scintillation-light reflector. Light containment
+is handled by a separate diffuse reflective wrap (next subsection).
+
+### Reflective Wrap
+
+| Parameter | Value | Notes |
+|---|---|---|
+| Function | Diffuse reflective wrap on every face of the liquid | Tyvek / PTFE / Spectralon / MgO analog |
+| Geant4 model | `unified` | Required for `groundfrontpainted` finish |
+| Surface type | `dielectric_dielectric` | Paint-layer model; neighbor's `RINDEX` irrelevant |
+| Finish | `groundfrontpainted` | Lambertian (cos θ) reflection, no transmission |
+| Reflectivity | 0.98, flat 1.5–4.5 eV | Janecek & Moses, IEEE TNS 55, 2432 (2008) |
+| Geant4 attachment | `G4LogicalSkinSurface` on `EJ309LV` | One registration covers all 8 placements |
+
+**Rationale.** Real EJ-309 cells carry a high-reflectivity diffuse wrap
+(Tyvek, PTFE/Teflon, Spectralon, or VM2000 specular film) inside the Al
+housing. The wrap, not the can, is what contains scintillation light; the can
+is structure and light-tightness only. Modelling the wrap as a
+`groundfrontpainted` skin surface bypasses the need to define optical
+properties on the aluminum (which has none) and matches typical lab-frame
+photometric measurements of clean PTFE wraps to within ~1–2 %. Because the
+finish is "front painted," the photon never enters the second medium — the
+neighbor (Al, air, anything) is irrelevant to the optical boundary.
+
+The skin surface is non-directional and applies automatically to all 8 EJ-309
+placements. When a PMT/SiPM coupling face is added later, override that
+single face with a `G4LogicalBorderSurface` and the skin keeps handling the
+remaining five faces of every cell.
 
 ### Array Layout
 
@@ -251,6 +283,21 @@ scoring is enabled.
 | Shape | Right circular cylinder (G4Tubs) | Standard form factor |
 | Diameter | 38 mm (1.5 inches) | Standard commercial size |
 | Length | 38 mm (1.5 inches) | — |
+
+### Reflective Wrap
+
+Identical optical surface to the EJ-309 wrap (§2): same `unified` /
+`dielectric_dielectric` / `groundfrontpainted`, same R = 0.98 flat across
+1.5–4.5 eV, the **same shared `G4OpticalSurface` object** registered as a
+second `G4LogicalSkinSurface` — this one on `LaBr3LV`.
+
+Real LaBr₃(Ce) crystals are sold pre-wrapped (typically MgO powder or PTFE)
+inside a hermetic Al housing with a quartz/glass window for the PMT. This
+simulation places bare crystals directly in the world (no housing per
+design.md §3), so the skin surface stands in directly for "the wrapped
+crystal as delivered." If/when an explicit hermetic housing is added later,
+the skin remains correct on the inner faces and a `G4LogicalBorderSurface`
+should be added to model the PMT-window face separately.
 
 ### Placement
 
@@ -393,6 +440,7 @@ recorded here. See `doc/architecture.md` for the code-flow side and
 | Backing plate (§1.D) | ✗ deferred | Mechanical-support analog; not load-bearing for physics. |
 | 8 × EJ-309 cylinders + 1 mm Al housing | ✓ implemented | Cylinder axes oriented radially. Housing now required (was "optional" in spec). |
 | 2 × LaBr₃(Ce) cylinders | ✓ implemented | Bare (no housing per spec). |
+| Tyvek/PTFE diffuse reflective skin (EJ-309 + LaBr₃) | ✓ implemented | Shared `G4OpticalSurface` (`unified` / `dielectric_dielectric` / `groundfrontpainted`, R = 0.98 flat); attached as `G4LogicalSkinSurface` on `EJ309LV` and `LaBr3LV`. |
 | EJ-309 MPT incl. per-particle yields | ✓ implemented | electron / proton / ion / alpha / deuteron / triton curves. |
 | LaBr₃ MPT incl. per-particle yields | ✓ implemented | Linear curves (single-component, no PSD). Real α/β ≈ 0.3 quenching deferred to refinement pass. |
 | Stilbene material variant (§2) | ✗ deferred | EJ-309 only. |

@@ -14,6 +14,8 @@
 #include "G4Isotope.hh"
 #include "G4MaterialPropertiesTable.hh"
 #include "G4IonisParamMat.hh"
+#include "G4OpticalSurface.hh"
+#include "G4LogicalSkinSurface.hh"
 
 #include "G4SystemOfUnits.hh"
 
@@ -243,6 +245,44 @@ void MyDetectorConstruction::DefineMaterials() {
 
     fLaBr3->SetMaterialPropertiesTable(mptLaBr);
     fLaBr3->GetIonisation()->SetBirksConstant(0.00131*mm/MeV);
+
+    // =========================================================================
+    // Tyvek / PTFE-equivalent diffuse reflective wrap
+    // =========================================================================
+    // Models a high-reflectivity diffuse white wrapper (Tyvek, PTFE/Teflon,
+    // Spectralon, MgO powder) covering every face of every scintillator. Real
+    // EJ-309 cells have such a wrap inside the Al housing; real LaBr₃(Ce)
+    // crystals are sold pre-wrapped inside their hermetic can. A single shared
+    // G4OpticalSurface stands in for both — registered as a G4LogicalSkinSurface
+    // on each scintillator's logical volume in BuildEJ309Array / BuildLaBr3Array.
+    //
+    // unified model + groundfrontpainted finish:
+    //   • A photon hitting the boundary either reflects with probability
+    //     REFLECTIVITY or is absorbed with probability (1 − REFLECTIVITY).
+    //   • "ground"      → reflection is purely Lambertian (cos θ).
+    //   • "frontpainted" → no refraction into the second medium; the paint
+    //     layer is what the photon interacts with, so the neighbor's RINDEX
+    //     does not matter (this is why the bare LaBr₃/air boundary still
+    //     behaves like a wrapped crystal).
+    //
+    // Reflectivity 0.98 is the standard literature value for clean PTFE wrap
+    // across the visible band — see Janecek & Moses, IEEE TNS 55 (2008) 2432.
+    // =========================================================================
+    fTyvekWrap = new G4OpticalSurface("TyvekWrap");
+    fTyvekWrap->SetModel(unified);
+    fTyvekWrap->SetType(dielectric_dielectric);
+    fTyvekWrap->SetFinish(groundfrontpainted);
+
+    auto* mptTyvek = new G4MaterialPropertiesTable();
+    // Two-point flat grid is sufficient — REFLECTIVITY is wavelength-independent
+    // to the precision PTFE/Tyvek datasheets quote across 350–700 nm, which
+    // brackets both EJ-309 (424 nm) and LaBr₃ (380 nm) emission peaks.
+    const std::vector<G4double> phETyvek = { 1.5*eV, 4.5*eV };
+    const std::vector<G4double> reflTyvek(phETyvek.size(), 0.98);
+    const std::vector<G4double> effTyvek (phETyvek.size(), 0.0);
+    mptTyvek->AddProperty("REFLECTIVITY", phETyvek, reflTyvek);
+    mptTyvek->AddProperty("EFFICIENCY",   phETyvek, effTyvek);
+    fTyvekWrap->SetMaterialPropertiesTable(mptTyvek);
 }
 
 // -----------------------------------------------------------------------------
@@ -351,6 +391,14 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
                       logicEJ, "EJ309Liquid",
                       logicHouse, /*pMany=*/false, /*copy=*/0);
 
+    // Tyvek/PTFE-equivalent diffuse reflective skin on every face of the
+    // liquid. Skin (vs. border) is correct here: the wrap is uniform on all
+    // faces of every cell, so one registration covers all 8 placements
+    // automatically. When a PMT/SiPM coupling face is added later, override
+    // just that one face with a G4LogicalBorderSurface — the skin remains
+    // the default for every other boundary.
+    new G4LogicalSkinSurface("EJ309TyvekSkin", logicEJ, fTyvekWrap);
+
     // Place 8 housings (each carrying a daughter liquid placement) at the
     // tabulated spherical coordinates with copy_no = i. The Phase B
     // ScintillatorSD will look up `i` against the 8-string detector_id table.
@@ -416,6 +464,12 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
                                   /*halfZ=*/hCyl,
                                   0., 360.*deg);
     auto* logicLaBr = new G4LogicalVolume(solidLaBr, fLaBr3, "LaBr3LV");
+
+    // Same Tyvek/PTFE skin as EJ-309 — real LaBr₃(Ce) crystals are shipped
+    // pre-wrapped (typically MgO powder or PTFE) inside their hermetic Al
+    // housing. The bare crystal in this sim has no housing, so the skin
+    // surface stands in directly for "the wrapped crystal as delivered."
+    new G4LogicalSkinSurface("LaBr3TyvekSkin", logicLaBr, fTyvekWrap);
 
     for (size_t i = 0; i < specs.size(); ++i) {
         const auto& s = specs[i];

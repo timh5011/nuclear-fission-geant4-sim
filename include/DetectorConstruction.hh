@@ -6,6 +6,7 @@
 
 class G4LogicalVolume;
 class G4Material;
+class G4OpticalSurface;
 class G4VPhysicalVolume;
 
 // =============================================================================
@@ -58,6 +59,12 @@ private:
                                      // scintillation (no PSD). Intrinsic
                                      // ¹³⁸La / ²²⁷Ac backgrounds NOT modeled.
     G4Material* fAluminum{nullptr};  // EJ-309 housings (1 mm shell).
+
+    // Shared diffuse reflective wrap (Tyvek/PTFE analog) attached as a skin
+    // surface to every scintillator logical volume — keeps scintillation
+    // photons inside the active volume by Lambertian back-reflection at the
+    // boundary. One surface object, two skin registrations.
+    G4OpticalSurface* fTyvekWrap{nullptr};
 };
 
 #endif
