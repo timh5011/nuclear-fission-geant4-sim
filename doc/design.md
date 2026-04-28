@@ -384,6 +384,9 @@ ion / alpha / deuteron / triton curves on **both** EJ-309 and LaBr₃.
 
 ### Energy-deposition scoring (per step, in every sensitive volume)
 
+The full design spec — the per-step record an SD would emit if every column
+below were retained:
+
 - Energy deposited (MeV)
 - Global time (ns, relative to event start)
 - Particle type (PDG encoding)
@@ -391,6 +394,30 @@ ion / alpha / deuteron / triton curves on **both** EJ-309 and LaBr₃.
 - Process that created the particle
 - dE/dx at each step (for Birks' law correction in post-processing)
 - Pre-step and post-step position
+
+**As-implemented (Phase B).** `ScintillatorSD` aggregates rather than
+streams per-step records: it accumulates `energy_dep` per
+`(track_id, copy_no)` across every step in the volume, capturing
+`entry_time_ns` and `creator_process` on the first step only, and emits one
+row at end-of-event. The `hits.csv` schema is therefore:
+
+```
+event_id, detector_id, track_id, particle, creator_process,
+entry_time_ns, energy_dep_MeV
+```
+
+Aggregation is appropriate for the §8 analysis observables — TOF,
+multiplicity, PSD ratio, and gamma-line spectroscopy are all per-track
+quantities. The columns dropped from the §7 spec are:
+
+- **PDG encoding** — replaced by the human-readable particle name (e.g.
+  `"Mo95"` rather than `1000420950`). Re-encoding to PDG is straightforward
+  in post-processing if needed.
+- **Parent ID** — not needed at the Phase B analysis layer; track lineage
+  is recoverable from `creator_process` for most analyses.
+- **dE/dx, pre/post-step position** — would require per-step rows. Bring
+  these back when off-line Birks-correction or position-resolved scoring
+  is needed (e.g. for a future SiPM/PMT optical-arrival model).
 
 ### Optical-photon scoring (at photocathode surfaces)
 
@@ -400,6 +427,15 @@ ion / alpha / deuteron / triton curves on **both** EJ-309 and LaBr₃.
 
 Optical-photon scoring is what enables waveform reconstruction and PSD
 analysis from simulated pulses.
+
+**Implementation status: deferred.** Scintillation, transport, and
+reflective-skin boundary processes are all live (see §1–§3 reflective wrap
++ MPTs); the missing piece is a sensitive detector for optical photons.
+`ScintillatorSD::ProcessHits` short-circuits optical photons in a single
+line — deleting that early-return is the first step toward enabling photon
+scoring. The subsequent step is choosing where to tally (a photocathode-
+surface SD vs. a separate "photons-arriving" counter) and adding the
+corresponding rows/columns to the output schema.
 
 ---
 
