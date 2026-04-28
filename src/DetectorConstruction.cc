@@ -1,5 +1,7 @@
 #include "DetectorConstruction.hh"
 
+#include "ScintillatorSD.hh"
+
 #include "G4Box.hh"
 #include "G4Tubs.hh"
 #include "G4LogicalVolume.hh"
@@ -16,6 +18,7 @@
 #include "G4IonisParamMat.hh"
 #include "G4OpticalSurface.hh"
 #include "G4LogicalSkinSurface.hh"
+#include "G4SDManager.hh"
 
 #include "G4SystemOfUnits.hh"
 
@@ -498,4 +501,45 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
                           world, /*pMany=*/false,
                           /*copy=*/static_cast<G4int>(i));
     }
+}
+
+// -----------------------------------------------------------------------------
+// ConstructSDandField — attach the two ScintillatorSD instances
+// -----------------------------------------------------------------------------
+//
+// Two SDs total, one per scintillator material:
+//
+//   • EJ309SD attached to the EJ-309 LIQUID logical (EJ309LV). The liquid is
+//     placed inside EJ309HouseLV, which is the volume copy-placed 8× into
+//     the world. So the per-detector copy_no lives one level UP the
+//     touchable history → copyNoDepth = 1.
+//
+//   • LaBr3SD attached to LaBr3LV directly. The crystal is placed bare in
+//     the world with copy_no 0..1 → copyNoDepth = 0.
+//
+// HitWriter* is injected per-run by MyRunAction::BeginOfRunAction (writers
+// don't exist at construction time — they're built once the run starts and
+// the timestamped output directory is known). RunAction looks up the SDs
+// by name via G4SDManager::FindSensitiveDetector, so the names registered
+// here ("EJ309SD"/"LaBr3SD") must match the strings in RunAction.
+// -----------------------------------------------------------------------------
+void MyDetectorConstruction::ConstructSDandField() {
+    auto* sdMan = G4SDManager::GetSDMpointer();
+
+    auto* ej309SD = new ScintillatorSD(
+        "EJ309SD",
+        std::vector<G4String>{
+            "EJ309-0", "EJ309-1", "EJ309-2", "EJ309-3",
+            "EJ309-4", "EJ309-5", "EJ309-6", "EJ309-7"
+        },
+        /*copyNoDepth=*/1);
+    sdMan->AddNewDetector(ej309SD);
+    SetSensitiveDetector("EJ309LV", ej309SD);
+
+    auto* laBr3SD = new ScintillatorSD(
+        "LaBr3SD",
+        std::vector<G4String>{ "LaBr3-0", "LaBr3-1" },
+        /*copyNoDepth=*/0);
+    sdMan->AddNewDetector(laBr3SD);
+    SetSensitiveDetector("LaBr3LV", laBr3SD);
 }

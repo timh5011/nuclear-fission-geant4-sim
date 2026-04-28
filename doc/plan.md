@@ -1,5 +1,7 @@
 # Implementation Plan — Nuclear-Fission Geant4 Simulation per `doc/design.md`
 
+> **Status (2026-04-28):** Phases **A** (geometry/materials/generator/mode dispatch + Tyvek skin) and **B** (`ScintillatorSD` + `CsvWriter` + `RunAction`/`EventAction` wiring) are landed. The simulation builds, runs headless or interactive, and writes `data/<UTC>/{hits.csv, events.csv}` for every `/run/beamOn`. Phase **C** (fission watcher in `MySteppingAction` populating the `events.csv` metadata columns) is the next remaining phase; Phase **D** (architecture.md docs sweep) was folded into the Phase B doc update. The text below is preserved as the original implementation plan — read it as historical for the parts that are done.
+
 ## Context
 
 The current sim is a thin Geant4 shell — only the world, the U-235 foil (wrong shape, wrong axis), the physics list, and a single thermal-neutron primary generator are implemented. `RunAction`, `EventAction`, `SteppingAction` are empty stubs. The detector array described in `doc/design.md` (8 EJ-309 organic + 2 LaBr₃(Ce) inorganic scintillators) does not exist. There is no scoring, no output, no batch mode, and the v11 per-particle scintillation flag is not set so PSD would be silently broken even if scintillator volumes were added.
@@ -34,7 +36,7 @@ This plan implements the design.md spec to a "**ground-truth scoring**" stage: e
 ## Critical Geant4 v11.4.0 gotchas the implementation MUST respect
 
 1. **`G4OpticalParameters::Instance()->SetScintByParticleType(true)` must be set before `runManager->Initialize()`.** Otherwise per-particle MPT keys (`PROTONSCINTILLATIONYIELD1/2`, etc.) are silently ignored. The existing comment in `Physics.hh:86` ("removed in Geant4 v11") is wrong — the API moved, it wasn't dropped.
-2. **The HP fission process name in `G4HadronPhysicsQGSP_BIC_HP` is `"nFissionHP"` — NOT `"nFission"`.** Verified against `geant4-v11.4.0/source/physics_lists/constructors/hadron_inelastic/src/G4HadronPhysicsQGSP_BIC_HP.cc:139`. The `SteppingAction` fission-watcher must match `"nFissionHP"`. Matching `"nFission"` silently produces zero detected fissions and `events.csv` will be all empty.
+2. **The HP fission process name needs runtime verification before Phase C.** Plan was written citing `"nFissionHP"` from `G4HadronPhysicsQGSP_BIC_HP.cc:139`, but `G4NeutronFissionProcess.hh:57` in the v11.4.0 install shows the constructor default is `"nFission"`. Whichever name the live process advertises is the one the watcher must match — silent zero-fission logging is the failure mode if the wrong string is hardcoded. Recommended approach for Phase C: drop a one-line `G4cout << processName << G4endl` inside `UserSteppingAction` for the first event, run a high-statistics macro, find the actual fission step in the log, and only then hardcode the matching string.
 3. **`G4ParticleHPManager::SetProduceFissionFragments(true)` already correct in `nuclear-fission.cc:21`** — keep it before `Initialize()`.
 4. **Sensitive detectors must be attached in `MyDetectorConstruction::ConstructSDandField()`** (not `Construct()`) for MT-safety. This method does not exist yet; add it.
 

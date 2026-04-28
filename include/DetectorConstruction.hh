@@ -39,6 +39,12 @@ public:
 
     G4VPhysicalVolume* Construct() override;
 
+    // Sensitive-detector attachment lives here (not in Construct) per the
+    // Geant4 v11 MT-safety convention: ConstructSDandField is called per
+    // worker thread on the local geometry copy, so SD pointers are
+    // thread-correct even when the simulation is later switched to MT.
+    void ConstructSDandField() override;
+
 private:
     // Materials are built in the constructor (ahead of Construct()) so that
     // material pointers are already valid when Geant4's kernel calls

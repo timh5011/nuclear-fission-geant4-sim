@@ -449,20 +449,37 @@ recorded here. See `doc/architecture.md` for the code-flow side and
 | Physics list (modular, all per §6 modules) | ✓ implemented | Including the two pre-Initialize flags. |
 | Mode dispatch (interactive vs batch) | ✓ implemented | `./nuclear_fission` → OGL via `vis.mac`; `./nuclear_fission run.mac` → headless. |
 
-### Phase B — Sensitive detectors + ground-truth `hits.csv` (PENDING)
+### Phase B — Sensitive detectors + ground-truth `hits.csv` (DONE)
 
-`ScintillatorSD`, `HitWriter`, `EventWriter`, the timestamped output
-directory under `data/<UTC>/`, and the wiring from `MyRunAction` /
-`MyEventAction` / `MyDetectorConstruction::ConstructSDandField()`. After
-Phase B the simulation produces one row per (track, sensitive volume)
-entry: `event_id, detector_id, track_id, particle, creator_process,
-entry_time_ns, energy_dep_MeV`.
+| Component | Status | Notes |
+|---|---|---|
+| `ScintillatorSD` (per-`(trackId, copyNo)` accumulator) | ✓ implemented | One instance per scintillator material — `EJ309SD` (copy-no depth 1) + `LaBr3SD` (depth 0). Skips optical photons via a single short-circuit line. |
+| `CsvWriter.{hh,cc}` (`HitWriter` + `EventWriter`) | ✓ implemented | RAII; mutex-guarded `WriteRow`; opens with header; closes via dtor. |
+| `EventRecord` struct (with `std::optional<>` Phase C fields) | ✓ implemented | Empty optionals serialize to empty CSV cells. |
+| `MyDetectorConstruction::ConstructSDandField()` | ✓ implemented | Registers SDs via `G4SDManager::AddNewDetector` + `SetSensitiveDetector` by logical-volume name. |
+| `MyRunAction` rewrite (writers, output dir, SD injection) | ✓ implemented | Walks up from CWD to find repo-root marker `nuclear-fission.cc`; creates `data/<UTC-YYYYMMDDTHHMMSS>/`; injects `HitWriter*` into both SDs by name. |
+| `MyEventAction` rewrite (`EventRecord` + EoEvent write) | ✓ implemented | Constructor takes `(MySteppingAction*, MyRunAction*)`; resets fRecord at BoEvent; writes one row at EoEvent. Phase C metadata stays empty. |
+| `Action.cc` reorder (RunAction first) | ✓ implemented | Required so EventAction can hold the RunAction pointer. |
 
-### Phase C — Fission watcher + `events.csv` (PENDING)
+After Phase B the simulation produces one row per (track, sensitive volume)
+entry in `hits.csv`: `event_id, detector_id, track_id, particle,
+creator_process, entry_time_ns, energy_dep_MeV`. `events.csv` carries one
+row per event with `event_id` filled and the fission-metadata columns
+empty (filled in Phase C).
 
-`MySteppingAction` matches the `nFissionHP` post-step process and captures
-fission-vertex time + prompt-n/γ multiplicities + the two fragment PDGs.
-One row per event in `events.csv`.
+### Phase C — Fission watcher + `events.csv` metadata (PENDING)
+
+`MySteppingAction::UserSteppingAction` matches the HP fission post-step
+process and captures fission-vertex time + prompt-n/γ multiplicities + the
+two fragment PDGs into `*fEventRecord`. `MyEventAction::BeginOfEventAction`
+will propagate `&fRecord` to the SteppingAction at event start.
+
+> **Process-name caveat:** plan.md cited `"nFissionHP"` (per
+> `G4HadronPhysicsQGSP_BIC_HP.cc`), but `G4NeutronFissionProcess.hh:57` in
+> v11.4.0 shows the constructor default is `"nFission"`. Add a one-line
+> `G4cout` of the matched process name in an actual fission step to
+> confirm the live name before wiring the watcher — silent zero-fission
+> logging is the failure mode.
 
 ### Deferred beyond Phase C
 

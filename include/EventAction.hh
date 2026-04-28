@@ -2,31 +2,37 @@
 #define MYEVENTACTION_H
 
 #include "G4UserEventAction.hh"
-#include "G4Event.hh"
-#include "SteppingAction.hh"
-#include "G4RunManager.hh"
-#include "G4SystemOfUnits.hh"
-#include "G4AnalysisManager.hh"
-#include "G4RunManager.hh"
+#include "EventRecord.hh"
 
-class MyEventAction : public G4UserEventAction
-{
+class G4Event;
+class MySteppingAction;
+class MyRunAction;
+
+// =============================================================================
+// MyEventAction
+// =============================================================================
+// Owns a per-event EventRecord, resets it at BeginOfEventAction, and writes
+// it to events.csv at EndOfEventAction via MyRunAction's EventWriter.
+//
+// Phase B fills only `eventId` — the remaining EventRecord fields stay
+// std::nullopt and serialize as empty CSV cells. Phase C will hand &fRecord
+// to MySteppingAction so the fission watcher can populate the rest.
+//
+// MySteppingAction is held but unused in Phase B; the pointer is kept so the
+// constructor signature doesn't churn at the Phase C boundary.
+// =============================================================================
+class MyEventAction : public G4UserEventAction {
 public:
-    // Constructor
-    MyEventAction(MySteppingAction* steppingAction);
+    MyEventAction(MySteppingAction* stepping, MyRunAction* run);
+    ~MyEventAction() override;
 
-    // Destructor
-    virtual ~MyEventAction();
-
-    // Called at the beginning of each event
-    // virtual void BeginOfEventAction(const G4Event* event) override;
-
-    // Called at the end of each event
-    // irtual void EndOfEventAction(const G4Event* event) override;
+    void BeginOfEventAction(const G4Event* event) override;
+    void EndOfEventAction  (const G4Event* event) override;
 
 private:
-    MySteppingAction* fSteppingAction;  // Pointer to the stepping action to access total energy
-    // MySensitiveDetector* fSensitiveDetector; // Pointer to the sensitive detectors to access total energy deposited
+    MySteppingAction* fSteppingAction;   // for Phase C — unused in Phase B
+    MyRunAction*      fRunAction;        // for writer access in EOEvent
+    EventRecord       fRecord;
 };
 
 #endif

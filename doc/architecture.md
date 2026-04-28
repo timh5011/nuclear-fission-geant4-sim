@@ -2,7 +2,7 @@
 
 A high-level map of how this simulation is wired together and the chronological order in which the Geant4 framework drives it. This document is about *program structure and control flow*, not the physics models — for the physics, see `doc/theory.md` and the block comments in `include/Physics.hh` / `src/DetectorConstruction.cc`.
 
-After **Phase A** (geometry, materials, generator, mode dispatch) the simulation builds and runs cleanly: `./nuclear_fission` opens the OGL viewer with the full detector array, `./nuclear_fission run.mac` runs headless. The action classes (`RunAction`, `EventAction`, `SteppingAction`) remain empty stubs — they're filled in by Phase B (sensitive detectors + `hits.csv`) and Phase C (fission watcher + `events.csv`).
+After **Phases A + B** the simulation builds, runs, and writes CSV output. `./nuclear_fission` opens the OGL viewer with the full detector array; `./nuclear_fission run.mac` runs headless and produces `data/<UTC>/{hits.csv, events.csv}` at the repo root. `MyRunAction` and `MyEventAction` carry their full Phase B logic. `MySteppingAction` remains an empty shell — Phase C fills it with the fission watcher that populates the metadata columns of `events.csv`.
 
 ## Component layout
 
@@ -12,7 +12,7 @@ The application is a thin shell on top of the Geant4 user-application pattern. `
 nuclear-fission.cc                  main() — owns G4RunManager, sets two pre-Initialize flags,
 │                                   then dispatches to interactive or headless mode (argc-based)
 │
-├── MyDetectorConstruction          geometry + materials + optical surfaces
+├── MyDetectorConstruction          geometry + materials + optical surfaces + SD attach
 │   ├── DefineMaterials()           air, U-235, EJ-309, LaBr3(Ce), aluminum;
 │   │                                  + shared "TyvekWrap" G4OpticalSurface
 │   │                                — full G4MaterialPropertiesTables on both scintillators,
@@ -20,20 +20,33 @@ nuclear-fission.cc                  main() — owns G4RunManager, sets two pre-I
 │   ├── Construct()                 world (2 m³ air) + foil (20 mm × 0.5 µm U-235 disc)
 │   ├── BuildEJ309Array()           8 × EJ-309 cylinders + 1 mm Al housings, r=500 mm forward
 │   │                                  + G4LogicalSkinSurface(EJ309LV, TyvekWrap)
-│   └── BuildLaBr3Array()           2 × LaBr3(Ce) cylinders, r=300 mm at θ=135°
-│                                      + G4LogicalSkinSurface(LaBr3LV, TyvekWrap)
+│   ├── BuildLaBr3Array()           2 × LaBr3(Ce) cylinders, r=300 mm at θ=135°
+│   │                                  + G4LogicalSkinSurface(LaBr3LV, TyvekWrap)
+│   └── ConstructSDandField()       attaches one ScintillatorSD per scintillator material:
+│                                      EJ309SD (copy-no depth 1) on EJ309LV
+│                                      LaBr3SD (copy-no depth 0) on LaBr3LV
 │
 ├── MyPhysicsList                   header-only modular physics list (EM-option4, HP neutron,
 │                                   optical, ion, decay, radioactive decay)
 │
-└── MyActionInitialization          factory that builds the per-run user actions
+├── ScintillatorSD                  G4VSensitiveDetector — per-(trackId, copyNo) accumulator;
+│                                   skips optical photons; flushes HitRow per (track, vol)
+│                                   at EndOfEvent via injected HitWriter*
+│
+├── HitWriter / EventWriter          RAII CSV writers (CsvWriter.{hh,cc}); mutex-guarded
+│                                   WriteRow; header-on-construct; close on dtor
+│
+└── MyActionInitialization          factory — builds RunAction first so EventAction can
+    │                               take the run pointer (writer access)
     ├── MyPrimaryGenerator          single 0.025 eV neutron at (0, 0, -100 mm) → +ẑ
-    ├── MyRunAction                 stub — Phase B: opens hits.csv / events.csv, owns writers
-    ├── MyEventAction               stub — Phase B: holds EventRecord + propagates pointer to
-    │                                       SteppingAction; flushes events.csv at end of event
-    └── MySteppingAction            stub — Phase C: matches "nFissionHP" to capture the
-                                            fission-vertex time + prompt-n/γ multiplicities +
-                                            two fragment PDGs into the EventRecord
+    ├── MyRunAction                 owns HitWriter + EventWriter; BeginOfRunAction creates
+    │                               data/<UTC>/, opens writers, injects HitWriter* into SDs
+    ├── MyEventAction               holds EventRecord; BoEvent resets it + sets eventId;
+    │                               EoEvent writes one row to events.csv (Phase C will
+    │                               propagate &fRecord to SteppingAction at BoEvent)
+    └── MySteppingAction            stub — Phase C: matches the HP fission post-step process
+                                            to capture fission-vertex time + prompt-n/γ
+                                            multiplicities + two fragment PDGs into *fRecord
 ```
 
 The four user classes are not peers of `main()`; they are *callbacks* the kernel invokes at well-defined points. Understanding the architecture is mostly understanding *when* the kernel calls each of them.
@@ -66,25 +79,28 @@ Inline code comments at the rotation block document this.
 
 ## Pipeline — per `/run/beamOn N` (driven by the kernel)
 
-Once the UI session is live (or a batch macro is executing) and `/run/beamOn N` fires, the run manager enters the nested loop below. Stub hooks are still called every iteration even when their bodies are empty — wiring scoring later means filling them in, not adding new dispatch.
+Once the UI session is live (or a batch macro is executing) and `/run/beamOn N` fires, the run manager enters the nested loop below. The annotations show what each hook does as of Phases A+B; Phase C entries flag what's still empty.
 
 ```
 /run/beamOn N
 │
-├── MyRunAction::BeginOfRunAction(run)              [stub — Phase B fills in: opens timestamped
-│                                                              data/<UTC>/{hits,events}.csv,
-│                                                              injects HitWriter* into each SD]
+├── MyRunAction::BeginOfRunAction(run)
+│       → finds repo root by walking up CWD looking for nuclear-fission.cc
+│       → builds data/<UTC-YYYYMMDDTHHMMSS>/
+│       → constructs HitWriter (hits.csv) and EventWriter (events.csv)
+│       → injects HitWriter* into both ScintillatorSDs by name lookup
 │
 ├── for event = 0 .. N-1:
 │   │
-│   ├── MyEventAction::BeginOfEventAction(event)   [stub — Phase B: resets EventRecord;
-│   │                                                       Phase C: propagates &fRecord to
-│   │                                                       SteppingAction]
+│   ├── MyEventAction::BeginOfEventAction(event)
+│   │       → resets EventRecord (all optionals → nullopt)
+│   │       → sets fRecord.eventId = event->GetEventID()
+│   │       [Phase C: also propagates &fRecord to SteppingAction]
 │   │
 │   ├── MyPrimaryGenerator::GeneratePrimaries(event)
 │   │       → particle gun fires one 0.025 eV neutron from (0,0,-100 mm) along +ẑ
 │   │
-│   ├── Tracking loop  (kernel-internal, no user code unless hooks are filled)
+│   ├── Tracking loop  (kernel-internal)
 │   │   │
 │   │   ├── pop next track from the stack (primary first, then secondaries LIFO)
 │   │   │
@@ -92,18 +108,29 @@ Once the UI session is live (or a batch macro is executing) and `/run/beamOn N` 
 │   │   │       physics processes propose step lengths → shortest wins
 │   │   │       step is taken; energy deposited; secondaries created and pushed
 │   │   │       │
-│   │   │       ├── ScintillatorSD::ProcessHits(step)            [Phase B: per-(track,copyNo)
-│   │   │       │                                                 accumulator → hits.csv]
+│   │   │       ├── ScintillatorSD::ProcessHits(step)
+│   │   │       │      → optical photons short-circuit (return false) — deferred
+│   │   │       │      → first time we see (trackId, copyNo): capture entry_time_ns,
+│   │   │       │        creator_process, particle name (G4IonTable for ions)
+│   │   │       │      → every step: accumulate edep
 │   │   │       │
-│   │   │       └── MySteppingAction::UserSteppingAction(step)   [Phase C: matches the
-│   │   │                                                          "nFissionHP" post-step process]
+│   │   │       └── MySteppingAction::UserSteppingAction(step)   [empty — Phase C: matches
+│   │   │                                                         the HP fission process to
+│   │   │                                                         populate *fEventRecord]
 │   │   │
 │   │   └── repeat until track ends (stops, escapes world, or is killed)
 │   │
-│   └── MyEventAction::EndOfEventAction(event)     [Phase B writes one events.csv row;
-│                                                   ScintillatorSD::EndOfEvent flushes hits]
+│   ├── ScintillatorSD::EndOfEvent
+│   │       → for each (trackId, copyNo) accumulator with energyDepMeV > 0:
+│   │         resolve detector_id via copy_no → string table; emit one HitRow
+│   │         via fHitWriter->WriteRow(row)
+│   │
+│   └── MyEventAction::EndOfEventAction(event)
+│           → fRunAction->GetEventWriter()->WriteRow(fRecord)
+│           → empty optionals serialize as empty CSV cells
 │
-└── MyRunAction::EndOfRunAction(run)               [stub — Phase B closes the writers]
+└── MyRunAction::EndOfRunAction(run)
+        → resets fEventWriter / fHitWriter unique_ptrs (dtors flush + close)
 ```
 
 Two non-obvious points about this loop:
@@ -111,11 +138,51 @@ Two non-obvious points about this loop:
 - **Secondaries don't restart the loop.** The fission fragments, prompt neutrons, and gammas produced by a fission step are pushed onto the same track stack and processed before control returns to the next event. One `/run/beamOn 1` walks the *entire* shower.
 - **Vis trajectories are accumulated during tracking and rendered at end-of-event.** That's why the OGL window only updates between events, not during stepping. `vis.mac` sets `endOfEventAction accumulate 10000` and `endOfRunAction accumulate` so trajectories from many events build up in the view (the default `refresh` would wipe the scene after each event; the vis manager's internal safety cap of 100 events is bumped explicitly).
 
-## Where the stubs are and what they unlock
+## Phase status and remaining stubs
 
-`RunAction`, `EventAction`, and `SteppingAction` exist as empty shells with their virtual methods commented out. The dispatch path above already calls them — filling them in is purely a matter of un-commenting the override and adding logic. `G4AnalysisManager` is already `#include`d in `RunAction.hh`, `EventAction.hh`, and `SteppingAction.hh`, but Phase B will use a custom `CsvWriter` instead so the include is informational at this stage.
+Phases A + B are landed. The single remaining user-action stub is `MySteppingAction` — its `UserSteppingAction` override is still commented out and the file is otherwise empty. Phase C un-comments the override and matches the HP fission process to populate the optional fields of `*fEventRecord`. `MyEventAction::BeginOfEventAction` will then add a `fSteppingAction->SetEventRecord(&fRecord)` call so the watcher knows where to write. No new translation units are needed for Phase C.
 
-Phase B adds three new translation units (`ScintillatorSD.{hh,cc}`, `CsvWriter.{hh,cc}`) plus a `ConstructSDandField()` method on `MyDetectorConstruction` that attaches `ScintillatorSD` instances to the `EJ309LV` and `LaBr3LV` logical volumes. `CMakeLists.txt` globs `src/*.cc` and `include/*.hh` so new files are picked up automatically — but adding files (or editing a `.mac`) requires re-running `cmake`, not just `make`.
+`G4AnalysisManager` is `#include`d in a few headers from earlier scaffolding. Phase B uses a custom `CsvWriter` instead, so those includes are unused — they could be removed in a future cleanup pass.
+
+`CMakeLists.txt` globs `src/*.cc` and `include/*.hh`, so new files are picked up automatically — but adding files (or editing a `.mac`) requires re-running `cmake`, not just `make`.
+
+## CSV output and run lifecycle
+
+Each `/run/beamOn` produces one timestamped subdirectory under `<repo-root>/data/`. Resolution order:
+
+1. `MyRunAction::BeginOfRunAction` calls `FindRepoRoot()`, which walks up from `std::filesystem::current_path()` looking for a directory containing `nuclear-fission.cc`. Throws if it hits the filesystem root first — that means the binary was launched from outside the repo.
+2. `UtcTimestamp()` formats the current UTC time as `%Y%m%dT%H%M%S` (e.g. `20260428T023041`). UTC is chosen so timestamps are unambiguous across machines and DST transitions.
+3. `std::filesystem::create_directories(root / "data" / timestamp)` creates the run directory.
+4. `HitWriter` and `EventWriter` are constructed against `hits.csv` and `events.csv` in that directory — they truncate-open the file and write the header line in the constructor, flush+close in the destructor.
+5. The writers are owned by `MyRunAction` as `std::unique_ptr`s. `EndOfRunAction` resets them, triggering destruction and flush.
+
+`HitWriter*` injection into the SDs happens in step 4's continuation: `MyRunAction` looks up `"EJ309SD"` and `"LaBr3SD"` via `G4SDManager::FindSensitiveDetector`, dynamic-casts to `ScintillatorSD*`, and calls `SetHitWriter(fHitWriter.get())`. The lookup-by-name pattern keeps the ownership boundary clean — `MyDetectorConstruction` owns the SDs, `MyRunAction` owns the writers, neither holds the other's pointer.
+
+`MyEventAction` reaches the `EventWriter` via `MyRunAction::GetEventWriter()`, which returns the raw pointer from the unique_ptr.
+
+CSV schemas (kept in lockstep with `CsvWriter.cc` headers):
+
+```
+hits.csv:    event_id, detector_id, track_id, particle, creator_process,
+             entry_time_ns, energy_dep_MeV
+events.csv:  event_id, fission_time_ns, n_prompt_neutrons, n_prompt_gammas,
+             fragment_A_PDG, fragment_B_PDG
+```
+
+`hits.csv` rows: one per `(track, sensitive-volume)` entry with nonzero energy deposit. Pure-transit entries (zero edep) are dropped — they record a boundary cross with no physics content.
+
+`events.csv` rows: one per Geant4 event. In Phase B only `event_id` is filled; the fission-metadata columns serialize as empty cells (consecutive commas) until Phase C wires the fission watcher.
+
+`WriteRow` on both writers is mutex-guarded. In serial Phase B the lock is uncontended and effectively free; the guard is forward-compat for an eventual MT switch.
+
+## Mode dispatch
+
+`nuclear-fission.cc:main()` serves two workflows from one binary, dispatched on `argc`:
+
+- `argc >= 2` — treat `argv[1]` as a macro path, run `/control/execute <path>` headless, exit. This is the production path that produces CSV output. `src/macros/run.mac` is the default headless macro (`./nuclear_fission run.mac`).
+- `argc == 1` — interactive. Open the OGL viewer + UI prompt; load `src/macros/vis.mac` for scene setup; `ui->SessionStart()` blocks until the user types `exit`. CSV output is still produced for any `/run/beamOn` issued at the prompt because `MyRunAction::BeginOfRunAction` runs regardless of mode.
+
+The dispatch sits *after* `runManager->Initialize()` and *after* both pre-Initialize flags, so headless and interactive runs are functionally identical from the kernel's perspective.
 
 ## Optical infrastructure
 
@@ -125,7 +192,7 @@ Scintillation, transport, and reflection are **active** in Phase A; only photon
 - **Generated**: `G4OpticalPhysics` is registered in the physics list, `SetScintByParticleType(true)` is set, and both EJ-309 and LaBr₃ carry full `G4MaterialPropertiesTables` with refractive index, absorption length, emission spectrum, time constants, and per-particle yield curves. Scintillation photons *are* produced by `G4Scintillation::PostStepDoIt` whenever a charged particle deposits energy in a scintillator volume.
 - **Reflected**: a single shared `G4OpticalSurface` named `"TyvekWrap"` (`unified` model, `dielectric_dielectric` type, `groundfrontpainted` finish, `REFLECTIVITY = 0.98` flat across 1.5–4.5 eV) is built in `DefineMaterials()` and attached as a `G4LogicalSkinSurface` to **both** `EJ309LV` (in `BuildEJ309Array`) and `LaBr3LV` (in `BuildLaBr3Array`). The `groundfrontpainted` finish makes the wrap behave as a Lambertian diffuse reflector with no transmission — photons hitting any face of any scintillator reflect with 98 % probability, ignoring the neighbor material entirely. This is real, running machinery; the visible effect is suppressed only because photons aren't scored. Skin (vs. border) is the right choice here because the wrap is uniform on every face of every cell and one registration covers all 8 EJ-309 placements automatically. When a PMT/SiPM coupling face is eventually added, override that single face with a `G4LogicalBorderSurface`; the skin keeps handling the other faces.
 - **Not scored**: there is no photocathode / SiPM / PMT model and no sensitive detector for optical photons. After scintillation + reflection they are eventually absorbed (2 % per skin interaction, plus bulk absorption via `ABSLENGTH`) or escape into the air world (only via faces with no skin — i.e. nowhere, in the current geometry). They do **not** appear in `hits.csv`.
-- **Phase B explicitly skips them**: `ScintillatorSD::ProcessHits` will short-circuit for `track->GetParticleDefinition() == G4OpticalPhoton::Definition()` — one line. To enable photon scoring later, remove that early-return, decide where photons should be tallied (a photocathode-surface SD, or a separate "photons-arriving" counter on the scintillator volume), and add the corresponding rows/columns to the output. Materials, the per-particle flag, and the reflective skins do not need to be revisited.
+- **Phase B explicitly skips them**: `ScintillatorSD::ProcessHits` short-circuits for `track->GetParticleDefinition() == G4OpticalPhoton::Definition()` — one line near the top of the method (`return false`). To enable photon scoring later, delete that early-return, decide where photons should be tallied (a photocathode-surface SD, or a separate "photons-arriving" counter on the scintillator volume), and add the corresponding rows/columns to the output. Materials, the per-particle flag, and the reflective skins do not need to be revisited.
 
 ## Intrinsic-background TODO
 
@@ -142,5 +209,5 @@ The `LaBr3_Ce` material block in `src/DetectorConstruction.cc::DefineMaterials()
 - **`src/macros/vis.mac`** — interactive viewer setup. Loaded automatically by `main()` when no macro argument is given. Sets up OGL, draws the geometry, enables smooth trajectory rendering, configures `accumulate 10000` so trajectories persist across events.
 - **`CMakeLists.txt:32-39`** `configure_file`-copies all `src/macros/*.mac` into `build/` at *cmake* time — so editing a macro requires re-running `cmake`, not just `make`. New macros are auto-picked up by the glob.
 - **`build/`** — out-of-tree build directory; deleted and recreated freely.
-- **`data/<UTC-timestamp>/`** (Phase B) — repo-root output directory, one subdirectory per run. Will contain `hits.csv` and `events.csv`. `MyRunAction::BeginOfRunAction` resolves the repo root by walking up from the executable's CWD looking for `nuclear-fission.cc`, then creates the timestamped directory.
+- **`data/<UTC-timestamp>/`** — repo-root output directory, one subdirectory per `/run/beamOn` invocation. Contains `hits.csv` and `events.csv`. `MyRunAction::BeginOfRunAction` resolves the repo root by walking up from the executable's CWD looking for `nuclear-fission.cc`, then creates the timestamped directory. See "CSV output and run lifecycle" above for full details.
 - **`analysis/`, `plots/`** — empty placeholders for downstream post-processing of CSV data once Phase B/C land.
