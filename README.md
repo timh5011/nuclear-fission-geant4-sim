@@ -1,6 +1,6 @@
 # GEANT4 Simulation of Thermal Neutron-Induced U-235 Fission with Organic and Inorganic Scintillator Readout
 
-![](images/Screenshot%202026-04-28%20at%2011.00.00%20PM.png)
+![](images/Screenshot%202026-04-28%20at%2011.00.00%E2%80%AFPM.png)
 
 Geant4 v11.4.0 simulation of thermal neutron-on-²³⁵U fission with a scintillator detector array — 8 × EJ-309 organic cylinders (forward hemisphere, r = 500 mm, with Tyvek/PTFE diffuse reflective wrap and 1 mm Al housings) and 2 × LaBr₃(Ce) crystals (backward angles, r = 300 mm, also Tyvek-wrapped).
 
@@ -33,7 +33,7 @@ Each `/run/beamOn` writes a timestamped subdirectory under `data/` at the repo r
 
 ## What you'll see in the OGL viewer
 
-![](images/Screenshot%202026-04-28%20at%2010.58.37%20PM.png)
+![](images/Screenshot%202026-04-28%20at%2010.58.37%E2%80%AFPM.png)
 
 Green = neutral (prompt fission neutrons + gammas, escaping to the world boundary). Blue stubs at the foil = fission fragments stopping in microns (correct — they are heavy highly-charged ions). Red = electrons / betas from fragment decay chains. Per-event asymmetry is just momentum conservation of one fission, not a bug.
 
