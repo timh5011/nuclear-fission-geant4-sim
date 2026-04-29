@@ -4,35 +4,55 @@
 #include "G4UserEventAction.hh"
 #include "EventRecord.hh"
 
+#include <vector>
+
 class G4Event;
 class MySteppingAction;
+class MyTrackingAction;
 class MyRunAction;
+class ScintillatorSD;
 
 // =============================================================================
 // MyEventAction
 // =============================================================================
-// Owns a per-event EventRecord, resets it at BeginOfEventAction, and writes
-// it to events.csv at EndOfEventAction via MyRunAction's EventWriter.
+// Owns the per-event EventRecord and the fission-flag decision.
 //
-// Phase B fills only `eventId` — the remaining EventRecord fields stay
-// std::nullopt and serialize as empty CSV cells. Phase C will hand &fRecord
-// to MySteppingAction so the fission watcher can populate the rest.
+// Lifecycle:
+//   • BeginOfEventAction: reset fRecord; set eventId; hand &fRecord to both
+//     SteppingAction (fission watcher) and TrackingAction (chain counters).
+//     On the first event, lazily look up the two ScintillatorSDs by name
+//     and cache their pointers — they are needed at EoEvent for the
+//     flush/discard branch.
+//   • EndOfEventAction: branch on fRecord.fissionTimeNs.has_value():
+//       fission     → flush all SD pending hits to hits.csv,
+//                     write fRecord to events-truth.csv,
+//                     drain TrackingAction's pending TruthRows to truth-record.csv.
+//       no fission  → call DiscardPending on every SD and on TrackingAction;
+//                     write nothing to any of the three files.
 //
-// MySteppingAction is held but unused in Phase B; the pointer is kept so the
-// constructor signature doesn't churn at the Phase C boundary.
+// This class is the single decision point for "did this event fission?";
+// every other component just buffers locally during the event.
 // =============================================================================
 class MyEventAction : public G4UserEventAction {
 public:
-    MyEventAction(MySteppingAction* stepping, MyRunAction* run);
+    MyEventAction(MySteppingAction* stepping,
+                  MyTrackingAction* tracking,
+                  MyRunAction*      run);
     ~MyEventAction() override;
 
     void BeginOfEventAction(const G4Event* event) override;
     void EndOfEventAction  (const G4Event* event) override;
 
 private:
-    MySteppingAction* fSteppingAction;   // for Phase C — unused in Phase B
-    MyRunAction*      fRunAction;        // for writer access in EOEvent
+    void EnsureSDsLookedUp();   // lazy, one-shot SD pointer cache
+
+    MySteppingAction* fSteppingAction;
+    MyTrackingAction* fTrackingAction;
+    MyRunAction*      fRunAction;
     EventRecord       fRecord;
+
+    std::vector<ScintillatorSD*> fSDs;       // cached at first BoEvent
+    bool                          fSDsCached{false};
 };
 
 #endif

@@ -9,6 +9,7 @@
 
 class HitWriter;
 class EventWriter;
+class TruthRecordWriter;
 class G4Run;
 
 // =============================================================================
@@ -16,18 +17,24 @@ class G4Run;
 // =============================================================================
 // Owns the per-run CSV writers and the timestamped output directory.
 //
+// Three writers, three CSVs, all under data/<UTC>/:
+//   • hits.csv         — ScintillatorSD hits (filtered to fission events)
+//   • events-truth.csv — per-event truth metadata + decay-chain summary
+//                        (one row per fission event, with a top-of-file
+//                        "# n_thermal_neutrons=N" comment line)
+//   • truth-record.csv — per-track truth (every non-optical track born in
+//                        each fission event)
+//
 // Lifecycle:
-//   • BeginOfRunAction: walks up from the executable's CWD to find the repo
-//     root (marked by nuclear-fission.cc), creates data/<UTC>/, opens
-//     hits.csv + events.csv with their headers, and injects HitWriter* into
-//     every ScintillatorSD it can find. Logs the absolute output path so
-//     the run log shows where the data went.
+//   • BeginOfRunAction: walks up from CWD to find the repo root (marked by
+//     nuclear-fission.cc), creates data/<UTC>/, opens all three writers
+//     with their headers. Reads run->GetNumberOfEventToBeProcessed() to
+//     embed the requested beamOn count in events-truth.csv's comment line.
 //   • EndOfRunAction: resets the unique_ptrs — destructors flush+close.
 //
-// EventAction queries GetEventWriter() during EndOfEventAction to write its
-// per-event row. The hit writer is owned here but not handed out — the SDs
-// hold it directly via SetHitWriter, sidestepping the EventAction → SD path
-// (SDs would have to look up the EventAction otherwise, which is awkward).
+// EventAction queries the writer accessors at EndOfEventAction. SDs and
+// MyTrackingAction now buffer locally and are drained by EventAction; they
+// no longer hold writer pointers themselves.
 // =============================================================================
 class MyRunAction : public G4UserRunAction {
 public:
@@ -37,7 +44,9 @@ public:
     void BeginOfRunAction(const G4Run*) override;
     void EndOfRunAction  (const G4Run*) override;
 
-    EventWriter* GetEventWriter() { return fEventWriter.get(); }
+    HitWriter*         GetHitWriter()         { return fHitWriter.get(); }
+    EventWriter*       GetEventWriter()       { return fEventWriter.get(); }
+    TruthRecordWriter* GetTruthRecordWriter() { return fTruthRecordWriter.get(); }
 
 private:
     // Walks up from std::filesystem::current_path() until a directory
@@ -51,8 +60,9 @@ private:
     // machines / DST transitions.
     static std::string UtcTimestamp();
 
-    std::unique_ptr<HitWriter>   fHitWriter;
-    std::unique_ptr<EventWriter> fEventWriter;
+    std::unique_ptr<HitWriter>         fHitWriter;
+    std::unique_ptr<EventWriter>       fEventWriter;
+    std::unique_ptr<TruthRecordWriter> fTruthRecordWriter;
 };
 
 #endif

@@ -5,6 +5,7 @@
 
 #include "Generator.hh"
 #include "SteppingAction.hh"
+#include "TrackingAction.hh"
 #include "EventAction.hh"
 #include "RunAction.hh"
 

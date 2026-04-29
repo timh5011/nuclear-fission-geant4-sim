@@ -4,6 +4,8 @@
 #include "G4VSensitiveDetector.hh"
 #include "globals.hh"
 
+#include "CsvWriter.hh"   // HitRow definition (kept here so fPending can hold it)
+
 #include <unordered_map>
 #include <vector>
 
@@ -23,8 +25,11 @@ class G4TouchableHistory;
 // Per step (ProcessHits): a per-track, per-copy accumulator is updated.
 // Entry time and creator process are captured on the first step of a track
 // in a given copy; subsequent steps of the same track in the same copy add
-// to the energy deposit. At end-of-event the accumulator is flushed: one
-// HitRow per (track, copy) with nonzero edep is sent to the HitWriter.
+// to the energy deposit. At end-of-event the accumulator is *converted into
+// a pending HitRow vector* — it is NOT written immediately. MyEventAction
+// owns the fission decision: it calls FlushPending(HitWriter*) for fission
+// events and DiscardPending() otherwise, so hits.csv only ever sees rows
+// from events where the foil fissioned.
 //
 // Optical photons are short-circuited at the top of ProcessHits — a single
 // line that will be removed when scintillation-photon scoring is enabled.
@@ -42,11 +47,14 @@ public:
                    std::vector<G4String>       detectorIds,
                    G4int                       copyNoDepth);
 
-    void SetHitWriter(HitWriter* w) { fHitWriter = w; }
-
-    void   Initialize  (G4HCofThisEvent*) override;   // clears fAcc
+    void   Initialize  (G4HCofThisEvent*) override;   // clears fAcc + fPending
     G4bool ProcessHits (G4Step*, G4TouchableHistory*) override;
-    void   EndOfEvent  (G4HCofThisEvent*) override;   // flushes fAcc → HitWriter
+    void   EndOfEvent  (G4HCofThisEvent*) override;   // fAcc → fPending (no I/O)
+
+    // EventAction calls exactly one of these per event after the fission
+    // decision is known. Both clear fPending; only FlushPending writes.
+    void FlushPending  (HitWriter* w);
+    void DiscardPending();
 
 private:
     struct AccumKey {
@@ -75,9 +83,9 @@ private:
     };
 
     std::unordered_map<AccumKey, Accum, AccumKeyHash> fAcc;
+    std::vector<HitRow>   fPending;         // built at EndOfEvent, drained by EventAction
     std::vector<G4String> fDetectorIds;     // copy_no → detector_id string
     G4int                 fCopyNoDepth;
-    HitWriter*            fHitWriter{nullptr};
 };
 
 #endif

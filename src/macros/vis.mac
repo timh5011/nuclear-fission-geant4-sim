@@ -2,6 +2,14 @@
 # macro argument is given (i.e. plain `./nuclear_fission`). Drives the OGL
 # session that's normally inlined as ApplyCommand calls in C++.
 #
+# Typical fission-review workflow:
+#   ./nuclear_fission                # opens OGL with the geometry drawn
+#   Idle> /run/beamOn 2000           # or any count
+#   Idle> /vis/reviewKeptEvents      # flipbook of just the fission events
+# (MyEventAction calls G4EventManager::KeepTheCurrentEvent() on every fission
+#  event, so reviewKeptEvents shows only those — non-fission events are
+#  refreshed away during the run by the endOfEventAction setting below.)
+#
 # /run/initialize is idempotent — runManager->Initialize() was already called
 # from main() before the UI started, but the vis layer needs an initialized
 # scene to attach to, so calling it again here is the canonical pattern.
@@ -15,17 +23,18 @@
 /vis/scene/add/trajectories smooth
 /vis/scene/add/hits
 
-# Persist trajectories across events and runs. Default is "refresh", which
-# wipes the scene after each event (so only the last event's tracks remain)
-# and again at end-of-run. We want accumulated tracks so /run/beamOn N draws
-# all N events, and successive /run/beamOn calls add to the picture.
+# Refresh between events so the viewer doesn't pile up thousands of
+# non-fission tracks. MyEventAction::EndOfEventAction calls
+# G4EventManager::KeepTheCurrentEvent() on every fission event, so kept
+# events accumulate in the run manager's event store regardless of the
+# vis-scene refresh setting; flip through them after the run with
+# `/vis/reviewKeptEvents` at the Idle> prompt.
 #
-# The N argument to endOfEventAction is the maximum number of events worth
-# of trajectories to retain. The vis manager has an internal safety cap of
-# 100 if you don't set N explicitly — at /run/beamOn 2000 you'd lose all
-# but the last 100 events. We set 10000 to comfortably cover the typical
-# "few thousand events to spot a fission" use case.
-/vis/scene/endOfEventAction accumulate 10000
-/vis/scene/endOfRunAction accumulate
+# To go back to the old "draw-everything" mode (e.g. to scan for fission
+# events visually rather than via reviewKeptEvents), swap these two lines for
+#   /vis/scene/endOfEventAction accumulate 10000
+#   /vis/scene/endOfRunAction   accumulate
+/vis/scene/endOfEventAction refresh
+/vis/scene/endOfRunAction   refresh
 
 /tracking/verbose 0

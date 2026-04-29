@@ -28,6 +28,20 @@ struct EventRecord {
     std::optional<G4int>    nPromptGammas;    // Phase C
     std::optional<G4int>    fragmentA_PDG;    // Phase C
     std::optional<G4int>    fragmentB_PDG;    // Phase C
+
+    // Phase D — full decay-chain summary, populated by MyTrackingAction in
+    // PreUserTrackingAction. Counts every non-optical track born during the
+    // event, bucketed by particle type. nTotalChainTracks is the sum across
+    // all buckets and is the canonical "how many tracks did this event
+    // generate" number. Optionals stay nullopt for events with no fission
+    // (those rows are filtered out at write time anyway).
+    std::optional<G4int>    nTotalChainTracks;
+    std::optional<G4int>    nChainNeutrons;
+    std::optional<G4int>    nChainGammas;
+    std::optional<G4int>    nChainBetas;     // e- and e+
+    std::optional<G4int>    nChainAlphas;    // PDG 1000020040
+    std::optional<G4int>    nChainIons;      // |PDG| > 1e9, excluding alphas
+    std::optional<G4int>    nChainOther;     // everything else (mu, pi, ...)
 };
 
 #endif

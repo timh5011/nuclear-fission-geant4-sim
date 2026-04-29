@@ -36,11 +36,13 @@ ScintillatorSD::ScintillatorSD(const G4String&             name,
 
 // -----------------------------------------------------------------------------
 // Initialize — called by the kernel at the start of each event. EndOfEvent
-// already clears fAcc, so this is belt-and-braces; keeps the SD in a known
-// state if a future change ever exits EndOfEvent early.
+// + the EventAction-driven flush/discard already clear both buffers, so this
+// is belt-and-braces; keeps the SD in a known state if a future change ever
+// exits one of those paths early.
 // -----------------------------------------------------------------------------
 void ScintillatorSD::Initialize(G4HCofThisEvent*) {
     fAcc.clear();
+    fPending.clear();
 }
 
 // -----------------------------------------------------------------------------
@@ -85,21 +87,14 @@ G4bool ScintillatorSD::ProcessHits(G4Step* step, G4TouchableHistory*) {
 }
 
 // -----------------------------------------------------------------------------
-// EndOfEvent — flush every (trackId, copyNo) accumulator with nonzero edep
-// as a single HitRow. Pure-transit entries (zero edep) are dropped: they
-// inflate hits.csv with no physics content (they record the boundary cross
-// only), and Phase B's analysis is energy-deposit driven.
+// EndOfEvent — convert per-(track, copy) accumulators into pending HitRows.
+// Pure-transit entries (zero edep) are dropped: they inflate hits.csv with no
+// physics content (they record the boundary cross only), and the analysis is
+// energy-deposit driven. NO file I/O happens here — MyEventAction owns the
+// fission decision and will call FlushPending() or DiscardPending() once it
+// knows whether this event fissioned.
 // -----------------------------------------------------------------------------
 void ScintillatorSD::EndOfEvent(G4HCofThisEvent*) {
-    if (!fHitWriter) {
-        // RunAction::BeginOfRunAction injects this. If we somehow get here
-        // without a writer (e.g. event processed before BeginOfRunAction
-        // ran), drop the rows rather than crashing — Phase B's verification
-        // step will catch missing rows downstream.
-        fAcc.clear();
-        return;
-    }
-
     const G4int eventId = G4EventManager::GetEventManager()
                               ->GetConstCurrentEvent()
                               ->GetEventID();
@@ -115,8 +110,26 @@ void ScintillatorSD::EndOfEvent(G4HCofThisEvent*) {
         row.creatorProcess = a.creatorProcess;
         row.entryTimeNs    = a.entryTimeNs;
         row.energyDepMeV   = a.energyDepMeV;
-        fHitWriter->WriteRow(row);
+        fPending.push_back(std::move(row));
     }
 
     fAcc.clear();
+}
+
+// -----------------------------------------------------------------------------
+// FlushPending / DiscardPending — driven by MyEventAction::EndOfEventAction
+// after the fission flag is checked. FlushPending writes every pending row
+// to hits.csv; DiscardPending drops them. Both clear fPending.
+// -----------------------------------------------------------------------------
+void ScintillatorSD::FlushPending(HitWriter* w) {
+    if (w) {
+        for (const auto& row : fPending) {
+            w->WriteRow(row);
+        }
+    }
+    fPending.clear();
+}
+
+void ScintillatorSD::DiscardPending() {
+    fPending.clear();
 }

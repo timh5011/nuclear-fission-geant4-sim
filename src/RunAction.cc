@@ -1,10 +1,8 @@
 #include "RunAction.hh"
 
 #include "CsvWriter.hh"
-#include "ScintillatorSD.hh"
 
 #include "G4Run.hh"
-#include "G4SDManager.hh"
 #include "globals.hh"
 
 #include <array>
@@ -46,26 +44,25 @@ std::string MyRunAction::UtcTimestamp() {
 }
 
 // -----------------------------------------------------------------------------
-// BeginOfRunAction — build output dir, open writers, inject into SDs
+// BeginOfRunAction — build output dir, open all three writers
 // -----------------------------------------------------------------------------
-void MyRunAction::BeginOfRunAction(const G4Run*) {
+void MyRunAction::BeginOfRunAction(const G4Run* run) {
     const auto root   = FindRepoRoot();
     const auto outDir = root / "data" / UtcTimestamp();
     std::filesystem::create_directories(outDir);
 
-    fHitWriter   = std::make_unique<HitWriter>  (outDir / "hits.csv");
-    fEventWriter = std::make_unique<EventWriter>(outDir / "events.csv");
+    // The generator fires exactly one thermal neutron per event, so the
+    // requested beamOn count == the number of thermal neutrons fired at the
+    // foil. If the generator ever changes (e.g. multi-particle source),
+    // revisit this and either store the per-event multiplicity here or
+    // accumulate it in EventAction.
+    const G4int nThermalNeutrons = run->GetNumberOfEventToBeProcessed();
 
-    // Inject HitWriter* into every registered ScintillatorSD. We look the
-    // SDs up by name rather than holding pointers — DetectorConstruction
-    // owns the SDs and the lookup keeps the ownership boundary clean.
-    auto* sdMan = G4SDManager::GetSDMpointer();
-    for (const G4String name : { G4String("EJ309SD"), G4String("LaBr3SD") }) {
-        auto* base = sdMan->FindSensitiveDetector(name, /*warning=*/true);
-        if (auto* sd = dynamic_cast<ScintillatorSD*>(base)) {
-            sd->SetHitWriter(fHitWriter.get());
-        }
-    }
+    fHitWriter         = std::make_unique<HitWriter>(outDir / "hits.csv");
+    fEventWriter       = std::make_unique<EventWriter>(outDir / "events-truth.csv",
+                                                       nThermalNeutrons);
+    fTruthRecordWriter = std::make_unique<TruthRecordWriter>(
+                                                       outDir / "truth-record.csv");
 
     G4cout << "[MyRunAction] writing run output to " << outDir.string()
            << G4endl;
@@ -75,6 +72,7 @@ void MyRunAction::BeginOfRunAction(const G4Run*) {
 // EndOfRunAction — flush + close writers
 // -----------------------------------------------------------------------------
 void MyRunAction::EndOfRunAction(const G4Run*) {
+    fTruthRecordWriter.reset();
     fEventWriter.reset();
     fHitWriter.reset();
 }
