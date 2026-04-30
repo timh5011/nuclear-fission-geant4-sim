@@ -1,8 +1,8 @@
 # GEANT4 Simulation of Thermal Neutron-Induced U-235 Fission with Organic and Inorganic Scintillator Readout
 
-![](images/Screenshot%202026-04-28%20at%2011.00.00%E2%80%AFPM.png)
+![](images/Screenshot%202026-04-29%20at%2010.17.38%E2%80%AFPM.png)
 
-Geant4 v11.4.0 simulation of thermal neutron-on-²³⁵U fission with a scintillator detector array — 24 × EJ-309 organic cylinders (forward hemisphere, r = 500 mm, 6 polar rings × 4 azimuths with Tyvek/PTFE diffuse reflective wrap and 1 mm Al housings) and 2 × LaBr₃(Ce) crystals (backward angles, r = 300 mm, also Tyvek-wrapped).
+Geant4 v11.4.0 simulation of thermal neutron-on-²³⁵U fission with a scintillator detector array — 48 × EJ-309 organic cylinders (forward hemisphere, r = 500 mm, 6 polar rings × 8 azimuths on θ ∈ [20°, 130°] with Tyvek/PTFE diffuse reflective wrap and 1 mm Al housings; Fibonacci-spiral layout retained as a commented swap-in) and 2 × LaBr₃(Ce) crystals (backward angles, r = 300 mm, also Tyvek-wrapped).
 
 ## Build & run
 

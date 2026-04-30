@@ -152,7 +152,7 @@ series). See `doc/theory.md` §6 for full derivation.
 | Parameter | Value | Notes |
 |---|---|---|
 | Shape | Right circular cylinder (G4Tubs) | Standard detector form factor |
-| Diameter | 50 mm (2 inches) | — |
+| Diameter | 80 mm | Oversized vs. the standard 2″ commercial cell — boosts solid angle per cell by (80/50)² ≈ 2.56× at the 500 mm flight path |
 | Length | 50 mm (2 inches) | — |
 | Housing | 1 mm aluminum shell | Structural / light-tight outer can; **not** an optical reflector. |
 
@@ -171,7 +171,7 @@ is handled by a separate diffuse reflective wrap (next subsection).
 | Surface type | `dielectric_dielectric` | Paint-layer model; neighbor's `RINDEX` irrelevant |
 | Finish | `groundfrontpainted` | Lambertian (cos θ) reflection, no transmission |
 | Reflectivity | 0.98, flat 1.5–4.5 eV | Janecek & Moses, IEEE TNS 55, 2432 (2008) |
-| Geant4 attachment | `G4LogicalSkinSurface` on `EJ309LV` | One registration covers all 24 placements |
+| Geant4 attachment | `G4LogicalSkinSurface` on `EJ309LV` | One registration covers all 48 placements |
 
 **Rationale.** Real EJ-309 cells carry a high-reflectivity diffuse wrap
 (Tyvek, PTFE/Teflon, Spectralon, or VM2000 specular film) inside the Al
@@ -183,7 +183,7 @@ photometric measurements of clean PTFE wraps to within ~1–2 %. Because the
 finish is "front painted," the photon never enters the second medium — the
 neighbor (Al, air, anything) is irrelevant to the optical boundary.
 
-The skin surface is non-directional and applies automatically to all 24 EJ-309
+The skin surface is non-directional and applies automatically to all 48 EJ-309
 placements. When a PMT/SiPM coupling face is added later, override that
 single face with a `G4LogicalBorderSurface` and the skin keeps handling the
 remaining five faces of every cell.
@@ -192,43 +192,89 @@ remaining five faces of every cell.
 
 | Parameter | Value | Notes |
 |---|---|---|
-| Number of detectors | 24 | — |
-| Arrangement | Forward hemisphere, evenly distributed | — |
+| Number of detectors | 48 | — |
+| Arrangement | Forward hemisphere, 6 polar rings × 8 azimuthal positions | Alternative Fibonacci-spiral layout retained in source as a swap-in (commented) |
 | Radius from origin | 500 mm (50 cm) | Flight path for neutron TOF |
-| Angular coverage | θ = 30° to 120° in 18° steps | 6 polar rings × 4 azimuthal positions, φ staggered 45° on alternate rings |
-| Sensitive detector | Yes, all 24 | — |
+| Angular coverage | θ ∈ [20°, 130°] in 22° steps | Wider polar band than the prior 24-cell version, taking advantage of the doubled cell count |
+| Sensitive detector | Yes, all 48 | — |
 
-**Positions (spherical coordinates, r = 500 mm).** Numbering is ring-major:
-ring r (θ-index 0..5), azimuth k (0..3) → `EJ309-{4r+k}`. Even-r rings sit
-at φ ∈ {0°, 90°, 180°, 270°}; odd-r rings are staggered to
-φ ∈ {45°, 135°, 225°, 315°} so adjacent-ring cells never align radially.
+**Positions.** Two interchangeable layouts live in
+`src/DetectorConstruction.cc::BuildEJ309Array`, with one block commented out.
+Switching is a comment toggle.
+
+**Active layout — 6 rings × 8 azimuths on θ ∈ [20°, 130°].** Six polar rings
+at θ = 20°, 42°, 64°, 86°, 108°, 130° (uniform 22° steps); eight azimuthal
+slots per ring (45° apart), staggered 22.5° on alternate rings so adjacent-
+ring cells never align radially. Detector IDs are ring-major: ring r
+(0..5), slot k (0..7) → `EJ309-{8r+k}`. Even-r rings sit at φ ∈ {0°, 45°,
+90°, ..., 315°}; odd-r rings at φ ∈ {22.5°, 67.5°, ..., 337.5°}.
+Closest-pair separation ~210 mm.
 
 | Detector ID | θ (polar) | φ (azimuthal) |
 |---|---|---|
-| EJ309-0  | 30°  | 0°   |
-| EJ309-1  | 30°  | 90°  |
-| EJ309-2  | 30°  | 180° |
-| EJ309-3  | 30°  | 270° |
-| EJ309-4  | 48°  | 45°  |
-| EJ309-5  | 48°  | 135° |
-| EJ309-6  | 48°  | 225° |
-| EJ309-7  | 48°  | 315° |
-| EJ309-8  | 66°  | 0°   |
-| EJ309-9  | 66°  | 90°  |
-| EJ309-10 | 66°  | 180° |
-| EJ309-11 | 66°  | 270° |
-| EJ309-12 | 84°  | 45°  |
-| EJ309-13 | 84°  | 135° |
-| EJ309-14 | 84°  | 225° |
-| EJ309-15 | 84°  | 315° |
-| EJ309-16 | 102° | 0°   |
-| EJ309-17 | 102° | 90°  |
-| EJ309-18 | 102° | 180° |
-| EJ309-19 | 102° | 270° |
-| EJ309-20 | 120° | 45°  |
-| EJ309-21 | 120° | 135° |
-| EJ309-22 | 120° | 225° |
-| EJ309-23 | 120° | 315° |
+| EJ309-0  | 20°  | 0°    |
+| EJ309-1  | 20°  | 45°   |
+| EJ309-2  | 20°  | 90°   |
+| EJ309-3  | 20°  | 135°  |
+| EJ309-4  | 20°  | 180°  |
+| EJ309-5  | 20°  | 225°  |
+| EJ309-6  | 20°  | 270°  |
+| EJ309-7  | 20°  | 315°  |
+| EJ309-8  | 42°  | 22.5° |
+| EJ309-9  | 42°  | 67.5° |
+| EJ309-10 | 42°  | 112.5°|
+| EJ309-11 | 42°  | 157.5°|
+| EJ309-12 | 42°  | 202.5°|
+| EJ309-13 | 42°  | 247.5°|
+| EJ309-14 | 42°  | 292.5°|
+| EJ309-15 | 42°  | 337.5°|
+| EJ309-16 | 64°  | 0°    |
+| EJ309-17 | 64°  | 45°   |
+| EJ309-18 | 64°  | 90°   |
+| EJ309-19 | 64°  | 135°  |
+| EJ309-20 | 64°  | 180°  |
+| EJ309-21 | 64°  | 225°  |
+| EJ309-22 | 64°  | 270°  |
+| EJ309-23 | 64°  | 315°  |
+| EJ309-24 | 86°  | 22.5° |
+| EJ309-25 | 86°  | 67.5° |
+| EJ309-26 | 86°  | 112.5°|
+| EJ309-27 | 86°  | 157.5°|
+| EJ309-28 | 86°  | 202.5°|
+| EJ309-29 | 86°  | 247.5°|
+| EJ309-30 | 86°  | 292.5°|
+| EJ309-31 | 86°  | 337.5°|
+| EJ309-32 | 108° | 0°    |
+| EJ309-33 | 108° | 45°   |
+| EJ309-34 | 108° | 90°   |
+| EJ309-35 | 108° | 135°  |
+| EJ309-36 | 108° | 180°  |
+| EJ309-37 | 108° | 225°  |
+| EJ309-38 | 108° | 270°  |
+| EJ309-39 | 108° | 315°  |
+| EJ309-40 | 130° | 22.5° |
+| EJ309-41 | 130° | 67.5° |
+| EJ309-42 | 130° | 112.5°|
+| EJ309-43 | 130° | 157.5°|
+| EJ309-44 | 130° | 202.5°|
+| EJ309-45 | 130° | 247.5°|
+| EJ309-46 | 130° | 292.5°|
+| EJ309-47 | 130° | 337.5°|
+
+**Alternative layout (commented out in source) — Fibonacci spiral on
+θ ∈ [20°, 130°].** 48 points uniformly distributed in solid angle across the
+polar band by stepping equal Δ(cos θ) intervals while advancing φ by the
+golden angle. Algorithm:
+
+```
+cos θ_i = cos θ_min  +  (i + 0.5) / 48  ·  (cos θ_max  −  cos θ_min)
+φ_i     = (i · golden_angle) mod 2π,    golden_angle = π · (3 − √5) ≈ 137.508°
+```
+
+Loses ring symmetry — every cell has a unique (θ, φ) — but gives the lowest
+nearest-neighbor variance achievable with 48 points on this band. The
+swap-in if the ring layout's reflective azimuthal symmetry becomes
+inconvenient for some analysis.
 
 **Detection goals:**
 - Prompt fission neutrons: detected via proton recoil (n-p elastic scattering
@@ -300,7 +346,7 @@ scoring is enabled.
 | Parameter | Value | Notes |
 |---|---|---|
 | Shape | Right circular cylinder (G4Tubs) | Standard form factor |
-| Diameter | 38 mm (1.5 inches) | Standard commercial size |
+| Diameter | 120 mm | Oversized vs. the standard 1.5″ commercial crystal — boosts photopeak efficiency at 300 mm and gives more material for delayed-γ spectroscopy |
 | Length | 38 mm (1.5 inches) | — |
 
 ### Reflective Wrap
@@ -323,7 +369,7 @@ should be added to model the PMT-window face separately.
 | Parameter | Value | Notes |
 |---|---|---|
 | Number of detectors | 2 | Sufficient for gamma spectroscopy |
-| Radius from origin | 300 mm (30 cm) | Closer than organic array — higher solid angle compensates for smaller size |
+| Radius from origin | 300 mm (30 cm) | Closer than organic array — combined with the 120 mm aperture, gives high solid-angle coverage for backward-angle γ spectroscopy |
 | Positions | Backward angles to minimize neutron exposure | — |
 | Sensitive detector | Yes, both | — |
 

@@ -19,7 +19,7 @@ class G4TouchableHistory;
 // =============================================================================
 // Sensitive detector shared across same-material scintillator placements.
 // MyDetectorConstruction::ConstructSDandField creates two instances —
-// "EJ309SD" attached to the EJ-309 liquid logical volume (24 placements),
+// "EJ309SD" attached to the EJ-309 liquid logical volume (48 placements),
 // "LaBr3SD" attached to the LaBr₃ logical volume (2 placements).
 //
 // Per step (ProcessHits): a per-track, per-copy accumulator is updated.
@@ -36,7 +36,7 @@ class G4TouchableHistory;
 //
 // Copy-number resolution: the EJ-309 SD is attached to the LIQUID logical
 // volume (EJ309LV), which is itself placed inside the housing logical
-// (EJ309HouseLV) which carries copy_no 0..23. So the EJ-309 SD must look one
+// (EJ309HouseLV) which carries copy_no 0..47. So the EJ-309 SD must look one
 // level UP the touchable history to get the housing's copy number — that's
 // the `copyNoDepth` constructor argument: 1 for EJ-309, 0 for LaBr₃ (the
 // LaBr₃ SD is on the bare crystal placed directly in the world).

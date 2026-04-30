@@ -326,14 +326,14 @@ G4VPhysicalVolume* MyDetectorConstruction::Construct() {
 }
 
 // -----------------------------------------------------------------------------
-// BuildEJ309Array — 24 cylinders + 1 mm Al housings, forward hemisphere
+// BuildEJ309Array — 48 cylinders + 1 mm Al housings, forward hemisphere
 // -----------------------------------------------------------------------------
 //
-// Each EJ-309 cell is a 50 mm × 50 mm cylinder of liquid inside a 1 mm Al
+// Each EJ-309 cell is an 80 mm dia × 50 mm length cylinder of liquid inside a 1 mm Al
 // housing. The HOUSING is the placement-level volume in the world — its
-// copy_no identifies the detector (0..23). The EJ-309 LIQUID is a single
+// copy_no identifies the detector (0..47). The EJ-309 LIQUID is a single
 // daughter logical volume placed once inside the (shared) housing logical;
-// when the housing is copy-placed 24 times into the world, the liquid moves
+// when the housing is copy-placed 48 times into the world, the liquid moves
 // with it and inherits the same position+rotation. The liquid will be the
 // sensitive volume in Phase B; the housing is non-sensitive (per the
 // project's scope decision).
@@ -359,20 +359,38 @@ G4VPhysicalVolume* MyDetectorConstruction::Construct() {
 // on shutdown — the leak is a Geant4 idiom, not a bug).
 // -----------------------------------------------------------------------------
 void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
-    // 24-cell densified array: 6 polar rings × 4 azimuthal positions, with
-    // φ staggered by 45° on alternate rings to avoid radial clustering.
-    // θ rings: 30°, 48°, 66°, 84°, 102°, 120° (uniform 18° steps across
-    // [30°, 120°] — same band as the original 8-cell layout, matching the
-    // §2 design.md spec which avoids the upstream beam direction and the
-    // direct foil shadow). Detector IDs are ring-major: ring r, azimuth k
-    // → "EJ309-{4r+k}". Same numbering is reproduced in ConstructSDandField.
+    // 48-cell densified array. Two interchangeable layouts are kept side by
+    // side; uncomment exactly ONE block. Both produce a 48-element `specs`
+    // array consumed by the (shared) placement loop below; ConstructSDandField
+    // builds a 48-string EJ309-{0..47} id table that pairs with the active
+    // block's index ordering. Polar band θ ∈ [20°, 130°] in both cases.
+    //
+    // Cell housing radius is 41 mm at r = 500 mm, so the closest-pair
+    // clearance threshold is 82 mm linear (5.94° great-circle). Both layouts
+    // pass with substantial margin (see comments in each block).
     struct Spec { G4double theta; G4double phi; };
-    constexpr int nRings = 6;
-    constexpr int nPhi   = 4;
-    std::array<Spec, nRings * nPhi> specs;
+    constexpr int nCells = 48;
+    std::array<Spec, nCells> specs;
+
+    // =========================================================================
+    // LAYOUT OPTION A — 6 polar rings × 8 azimuthal positions  [ACTIVE]
+    // =========================================================================
+    // Six rings at θ = 20°, 42°, 64°, 86°, 108°, 130° (uniform 22° steps);
+    // eight φ slots per ring, staggered 22.5° on alternate rings. Detector IDs
+    // are ring-major: ring r, slot k → "EJ309-{8r+k}". Closest pair: adjacent
+    // ring, Δφ = 22.5° staggered → ~210 mm great-circle separation.
+    //
+    // To activate: uncomment this block AND comment out the Fibonacci block
+    // below. Only one block must run — both write to the same `specs`.
+    // =========================================================================
+    /*
+    */
     {
-        const G4double thetaMin = 30.*deg;
-        const G4double thetaMax = 120.*deg;
+        constexpr int nRings = 6;
+        constexpr int nPhi   = 8;
+        static_assert(nRings * nPhi == nCells, "option A cell count mismatch");
+        const G4double thetaMin = 20.*deg;
+        const G4double thetaMax = 130.*deg;
         const G4double dTheta   = (thetaMax - thetaMin) / (nRings - 1);
         const G4double dPhi     = 360.*deg / nPhi;
         for (int r = 0; r < nRings; ++r) {
@@ -383,6 +401,40 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
             }
         }
     }
+    // =========================== END OF OPTION A ===========================
+
+    // =========================================================================
+    // LAYOUT OPTION C — Fibonacci (golden-angle) spiral on θ ∈ [20°, 130°]  [INACTIVE]
+    // =========================================================================
+    // 48 points distributed uniformly in solid angle across the band by
+    // stepping through equal Δ(cos θ) intervals while advancing φ by the
+    // golden angle (137.508°). Loses ring symmetry — every cell has a unique
+    // (θ, φ) — but gives the smallest nearest-neighbor variance for a given
+    // count. ID i is the i-th sample of the spiral, ordered in increasing θ
+    // (decreasing cos θ). Closest-pair separation typical ~200 mm.
+    //
+    // The (i + 0.5)/N midpoint offset puts the first/last samples one half-
+    // step inside the band edges (avoids placing a cell exactly on θ_min /
+    // θ_max). `CLHEP::pi` / `CLHEP::twopi` are pulled in by G4SystemOfUnits.h
+    // (the unqualified `pi` macro is not exposed by Geant4 v11 headers).
+    // =========================================================================
+    /*
+    {
+        const G4double thetaMin    = 20.*deg;
+        const G4double thetaMax    = 130.*deg;
+        const G4double cosA        = std::cos(thetaMin);   // larger cosθ
+        const G4double cosB        = std::cos(thetaMax);   // smaller cosθ
+        const G4double goldenAngle = CLHEP::pi * (3. - std::sqrt(5.));   // ≈ 137.508°
+        for (int i = 0; i < nCells; ++i) {
+            const G4double cosT  = cosA + (i + 0.5) / nCells * (cosB - cosA);
+            const G4double theta = std::acos(cosT);
+            const G4double phi   = std::fmod(i * goldenAngle, CLHEP::twopi);
+            specs[i] = { theta, phi };
+        }
+    }
+    */
+
+    // =========================== END OF OPTION C ===========================
 
     const G4double R         = 500.*mm;       // distance from foil
     const G4double rCyl      = 40.*mm;        // EJ-309 radius (80 mm dia)
@@ -410,17 +462,18 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
 
     // Tyvek/PTFE-equivalent diffuse reflective skin on every face of the
     // liquid. Skin (vs. border) is correct here: the wrap is uniform on all
-    // faces of every cell, so one registration covers all 8 placements
+    // faces of every cell, so one registration covers all 48 placements
     // automatically. When a PMT/SiPM coupling face is added later, override
     // just that one face with a G4LogicalBorderSurface — the skin remains
     // the default for every other boundary.
     new G4LogicalSkinSurface("EJ309TyvekSkin", logicEJ, fTyvekWrap);
 
-    // Place all 24 housings (each carrying a daughter liquid placement) at
-    // the computed spherical coordinates with copy_no = i. The placement
-    // name is synthesized from the index ("EJ309-i"); ScintillatorSD looks
-    // up `i` against the 24-string detector_id table built in
-    // ConstructSDandField with matching ring-major numbering.
+    // Place all 48 housings (each carrying a daughter liquid placement) at
+    // the spherical coordinates produced by the active layout block above,
+    // with copy_no = i. The placement name is synthesized from the index
+    // ("EJ309-i"); ScintillatorSD looks up `i` against the 48-string
+    // detector_id table built in ConstructSDandField — ordering matches
+    // whichever layout block is active.
     for (size_t i = 0; i < specs.size(); ++i) {
         const auto& s = specs[i];
         const G4double sin_t = std::sin(s.theta);
@@ -458,7 +511,7 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
 // -----------------------------------------------------------------------------
 //
 // LaBr₃ cells are placed directly in the world with no housing (per
-// design.md §3). Smaller volume (38 mm × 38 mm) and closer to the target
+// design.md §3). 120 mm dia × 38 mm length, closer to the target
 // (r=300 mm) than the EJ-309 array — the higher Z gives much larger
 // photopeak efficiency per unit volume, and the backward placement
 // minimizes neutron exposure. Both detectors live at θ=135°.
@@ -527,7 +580,7 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
 // Two SDs total, one per scintillator material:
 //
 //   • EJ309SD attached to the EJ-309 LIQUID logical (EJ309LV). The liquid is
-//     placed inside EJ309HouseLV, which is the volume copy-placed 24× into
+//     placed inside EJ309HouseLV, which is the volume copy-placed 48× into
 //     the world. So the per-detector copy_no lives one level UP the
 //     touchable history → copyNoDepth = 1.
 //
@@ -543,11 +596,13 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
 void MyDetectorConstruction::ConstructSDandField() {
     auto* sdMan = G4SDManager::GetSDMpointer();
 
-    // Detector-id table for the 24-cell EJ-309 array. Numbering matches the
-    // ring-major scheme in BuildEJ309Array (ring r, azimuth k → index 4r+k).
+    // Detector-id table for the 48-cell EJ-309 array. Indexing matches the
+    // active layout block in BuildEJ309Array — ring-major (ring r, slot k →
+    // 8r+k) for option A, spiral-sample order (i = 0..47, increasing θ) for
+    // option C/Fibonacci.
     std::vector<G4String> ej309Ids;
-    ej309Ids.reserve(24);
-    for (int i = 0; i < 24; ++i) {
+    ej309Ids.reserve(48);
+    for (int i = 0; i < 48; ++i) {
         ej309Ids.emplace_back("EJ309-" + std::to_string(i));
     }
     auto* ej309SD = new ScintillatorSD(
