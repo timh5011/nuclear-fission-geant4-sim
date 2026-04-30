@@ -16,8 +16,9 @@ class G4VPhysicalVolume;
 // Builds the geometry described in doc/design.md:
 //   - 2 m × 2 m × 2 m air world
 //   - 20 mm dia × 0.5 µm pure ²³⁵U disc (G4Tubs), normal ∥ ẑ
-//   - 8 × EJ-309 organic scintillators (50 mm × 50 mm cylinders) at r=500 mm
-//     in the forward hemisphere, each in a 1 mm aluminum housing
+//   - 24 × EJ-309 organic scintillators (50 mm × 50 mm cylinders) at r=500 mm
+//     in the forward hemisphere (6 polar rings × 4 azimuths, θ ∈ [30°, 120°]),
+//     each in a 1 mm aluminum housing
 //   - 2 × LaBr₃(Ce) inorganic scintillators (38 mm × 38 mm cylinders) at
 //     r=300 mm, θ=135°, bare (no housing)
 //

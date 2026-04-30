@@ -24,6 +24,7 @@
 
 #include <array>
 #include <cmath>
+#include <string>
 #include <vector>
 
 // =============================================================================
@@ -292,10 +293,10 @@ void MyDetectorConstruction::DefineMaterials() {
 // Construct — world, foil, both detector arrays
 // -----------------------------------------------------------------------------
 G4VPhysicalVolume* MyDetectorConstruction::Construct() {
-    // World — 2 m × 2 m × 2 m air box (per design.md §4). Large enough to
+    // World — 6 m × 6 m × 6 m air box (per design.md §4). Large enough to
     // contain the EJ-309 array (r=500 mm) and LaBr₃ array (r=300 mm) with
     // margin, even after the housings extend the EJ-309 footprint by 1 mm.
-    auto* solidWorld = new G4Box("World", 1.0*m, 1.0*m, 1.0*m);
+    auto* solidWorld = new G4Box("World", 3.0*m, 3.0*m, 3.0*m);
     auto* logicWorld = new G4LogicalVolume(solidWorld, fAir, "WorldLV");
     auto* physWorld  = new G4PVPlacement(nullptr, G4ThreeVector(),
                                           logicWorld, "World",
@@ -325,14 +326,14 @@ G4VPhysicalVolume* MyDetectorConstruction::Construct() {
 }
 
 // -----------------------------------------------------------------------------
-// BuildEJ309Array — 8 cylinders + 1 mm Al housings, forward hemisphere
+// BuildEJ309Array — 24 cylinders + 1 mm Al housings, forward hemisphere
 // -----------------------------------------------------------------------------
 //
 // Each EJ-309 cell is a 50 mm × 50 mm cylinder of liquid inside a 1 mm Al
 // housing. The HOUSING is the placement-level volume in the world — its
-// copy_no identifies the detector (0..7). The EJ-309 LIQUID is a single
+// copy_no identifies the detector (0..23). The EJ-309 LIQUID is a single
 // daughter logical volume placed once inside the (shared) housing logical;
-// when the housing is copy-placed 8 times into the world, the liquid moves
+// when the housing is copy-placed 24 times into the world, the liquid moves
 // with it and inherits the same position+rotation. The liquid will be the
 // sensitive volume in Phase B; the housing is non-sensitive (per the
 // project's scope decision).
@@ -358,20 +359,33 @@ G4VPhysicalVolume* MyDetectorConstruction::Construct() {
 // on shutdown — the leak is a Geant4 idiom, not a bug).
 // -----------------------------------------------------------------------------
 void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
-    struct Spec { G4double theta; G4double phi; const char* id; };
-    const std::array<Spec, 8> specs = {{
-        { 30.*deg,   0.*deg, "EJ309-0" },
-        { 30.*deg, 180.*deg, "EJ309-1" },
-        { 60.*deg,  90.*deg, "EJ309-2" },
-        { 60.*deg, 270.*deg, "EJ309-3" },
-        { 90.*deg,   0.*deg, "EJ309-4" },
-        { 90.*deg, 180.*deg, "EJ309-5" },
-        {120.*deg,  90.*deg, "EJ309-6" },
-        {120.*deg, 270.*deg, "EJ309-7" },
-    }};
+    // 24-cell densified array: 6 polar rings × 4 azimuthal positions, with
+    // φ staggered by 45° on alternate rings to avoid radial clustering.
+    // θ rings: 30°, 48°, 66°, 84°, 102°, 120° (uniform 18° steps across
+    // [30°, 120°] — same band as the original 8-cell layout, matching the
+    // §2 design.md spec which avoids the upstream beam direction and the
+    // direct foil shadow). Detector IDs are ring-major: ring r, azimuth k
+    // → "EJ309-{4r+k}". Same numbering is reproduced in ConstructSDandField.
+    struct Spec { G4double theta; G4double phi; };
+    constexpr int nRings = 6;
+    constexpr int nPhi   = 4;
+    std::array<Spec, nRings * nPhi> specs;
+    {
+        const G4double thetaMin = 30.*deg;
+        const G4double thetaMax = 120.*deg;
+        const G4double dTheta   = (thetaMax - thetaMin) / (nRings - 1);
+        const G4double dPhi     = 360.*deg / nPhi;
+        for (int r = 0; r < nRings; ++r) {
+            const G4double theta = thetaMin + r * dTheta;
+            const G4double phi0  = (r % 2 == 0) ? 0. : 0.5 * dPhi;
+            for (int k = 0; k < nPhi; ++k) {
+                specs[r * nPhi + k] = { theta, phi0 + k * dPhi };
+            }
+        }
+    }
 
     const G4double R         = 500.*mm;       // distance from foil
-    const G4double rCyl      = 25.*mm;        // EJ-309 radius (50 mm dia)
+    const G4double rCyl      = 40.*mm;        // EJ-309 radius (80 mm dia)
     const G4double hCyl      = 25.*mm;        // EJ-309 half-length (50 mm)
     const G4double tHousing  = 1.*mm;         // Al wall thickness
 
@@ -402,9 +416,11 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
     // the default for every other boundary.
     new G4LogicalSkinSurface("EJ309TyvekSkin", logicEJ, fTyvekWrap);
 
-    // Place 8 housings (each carrying a daughter liquid placement) at the
-    // tabulated spherical coordinates with copy_no = i. The Phase B
-    // ScintillatorSD will look up `i` against the 8-string detector_id table.
+    // Place all 24 housings (each carrying a daughter liquid placement) at
+    // the computed spherical coordinates with copy_no = i. The placement
+    // name is synthesized from the index ("EJ309-i"); ScintillatorSD looks
+    // up `i` against the 24-string detector_id table built in
+    // ConstructSDandField with matching ring-major numbering.
     for (size_t i = 0; i < specs.size(); ++i) {
         const auto& s = specs[i];
         const G4double sin_t = std::sin(s.theta);
@@ -429,8 +445,9 @@ void MyDetectorConstruction::BuildEJ309Array(G4LogicalVolume* world) {
         }
         rot->invert();   // pass the FRAME rotation, not the object rotation
 
+        const G4String name = "EJ309-" + std::to_string(i);
         new G4PVPlacement(rot, center,
-                          logicHouse, s.id,
+                          logicHouse, name,
                           world, /*pMany=*/false,
                           /*copy=*/static_cast<G4int>(i));
     }
@@ -458,7 +475,7 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
     }};
 
     const G4double R    = 300.*mm;
-    const G4double rCyl = 19.*mm;       // 38 mm dia
+    const G4double rCyl = 60.*mm;       // 120 mm dia
     const G4double hCyl = 19.*mm;       // 38 mm length
 
     auto* solidLaBr = new G4Tubs("LaBr3Solid",
@@ -510,7 +527,7 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
 // Two SDs total, one per scintillator material:
 //
 //   • EJ309SD attached to the EJ-309 LIQUID logical (EJ309LV). The liquid is
-//     placed inside EJ309HouseLV, which is the volume copy-placed 8× into
+//     placed inside EJ309HouseLV, which is the volume copy-placed 24× into
 //     the world. So the per-detector copy_no lives one level UP the
 //     touchable history → copyNoDepth = 1.
 //
@@ -526,12 +543,16 @@ void MyDetectorConstruction::BuildLaBr3Array(G4LogicalVolume* world) {
 void MyDetectorConstruction::ConstructSDandField() {
     auto* sdMan = G4SDManager::GetSDMpointer();
 
+    // Detector-id table for the 24-cell EJ-309 array. Numbering matches the
+    // ring-major scheme in BuildEJ309Array (ring r, azimuth k → index 4r+k).
+    std::vector<G4String> ej309Ids;
+    ej309Ids.reserve(24);
+    for (int i = 0; i < 24; ++i) {
+        ej309Ids.emplace_back("EJ309-" + std::to_string(i));
+    }
     auto* ej309SD = new ScintillatorSD(
         "EJ309SD",
-        std::vector<G4String>{
-            "EJ309-0", "EJ309-1", "EJ309-2", "EJ309-3",
-            "EJ309-4", "EJ309-5", "EJ309-6", "EJ309-7"
-        },
+        ej309Ids,
         /*copyNoDepth=*/1);
     sdMan->AddNewDetector(ej309SD);
     SetSensitiveDetector("EJ309LV", ej309SD);

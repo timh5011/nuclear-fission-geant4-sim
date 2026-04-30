@@ -2,7 +2,7 @@
 
 ![](images/Screenshot%202026-04-28%20at%2011.00.00%E2%80%AFPM.png)
 
-Geant4 v11.4.0 simulation of thermal neutron-on-²³⁵U fission with a scintillator detector array — 8 × EJ-309 organic cylinders (forward hemisphere, r = 500 mm, with Tyvek/PTFE diffuse reflective wrap and 1 mm Al housings) and 2 × LaBr₃(Ce) crystals (backward angles, r = 300 mm, also Tyvek-wrapped).
+Geant4 v11.4.0 simulation of thermal neutron-on-²³⁵U fission with a scintillator detector array — 24 × EJ-309 organic cylinders (forward hemisphere, r = 500 mm, 6 polar rings × 4 azimuths with Tyvek/PTFE diffuse reflective wrap and 1 mm Al housings) and 2 × LaBr₃(Ce) crystals (backward angles, r = 300 mm, also Tyvek-wrapped).
 
 ## Build & run
 

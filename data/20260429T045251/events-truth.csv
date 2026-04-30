@@ -1,5 +1,0 @@
-# n_thermal_neutrons=2000
-event_id,fission_time_ns,n_prompt_neutrons,n_prompt_gammas,fragment_A_PDG,fragment_B_PDG,n_total_chain_tracks,n_chain_neutrons,n_chain_gammas,n_chain_betas,n_chain_alphas,n_chain_ions,n_chain_other
-1130,45725.525196,4,7,1000320860,1000601450,3313,5,15,3278,,11,4
-1267,45725.412169,3,5,1000340880,1000581440,1050,4,11,1019,,12,4
-1787,45725.414460,3,12,1000380920,1000541400,3559,4,19,3515,,16,5

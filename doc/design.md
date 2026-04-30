@@ -171,7 +171,7 @@ is handled by a separate diffuse reflective wrap (next subsection).
 | Surface type | `dielectric_dielectric` | Paint-layer model; neighbor's `RINDEX` irrelevant |
 | Finish | `groundfrontpainted` | Lambertian (cos θ) reflection, no transmission |
 | Reflectivity | 0.98, flat 1.5–4.5 eV | Janecek & Moses, IEEE TNS 55, 2432 (2008) |
-| Geant4 attachment | `G4LogicalSkinSurface` on `EJ309LV` | One registration covers all 8 placements |
+| Geant4 attachment | `G4LogicalSkinSurface` on `EJ309LV` | One registration covers all 24 placements |
 
 **Rationale.** Real EJ-309 cells carry a high-reflectivity diffuse wrap
 (Tyvek, PTFE/Teflon, Spectralon, or VM2000 specular film) inside the Al
@@ -183,7 +183,7 @@ photometric measurements of clean PTFE wraps to within ~1–2 %. Because the
 finish is "front painted," the photon never enters the second medium — the
 neighbor (Al, air, anything) is irrelevant to the optical boundary.
 
-The skin surface is non-directional and applies automatically to all 8 EJ-309
+The skin surface is non-directional and applies automatically to all 24 EJ-309
 placements. When a PMT/SiPM coupling face is added later, override that
 single face with a `G4LogicalBorderSurface` and the skin keeps handling the
 remaining five faces of every cell.
@@ -192,24 +192,43 @@ remaining five faces of every cell.
 
 | Parameter | Value | Notes |
 |---|---|---|
-| Number of detectors | 8 | — |
+| Number of detectors | 24 | — |
 | Arrangement | Forward hemisphere, evenly distributed | — |
 | Radius from origin | 500 mm (50 cm) | Flight path for neutron TOF |
-| Angular coverage | θ = 30° to 150° in ~20° steps | 4 polar rings × 2 azimuthal positions |
-| Sensitive detector | Yes, all 8 | — |
+| Angular coverage | θ = 30° to 120° in 18° steps | 6 polar rings × 4 azimuthal positions, φ staggered 45° on alternate rings |
+| Sensitive detector | Yes, all 24 | — |
 
-**Positions (spherical coordinates, r = 500 mm):**
+**Positions (spherical coordinates, r = 500 mm).** Numbering is ring-major:
+ring r (θ-index 0..5), azimuth k (0..3) → `EJ309-{4r+k}`. Even-r rings sit
+at φ ∈ {0°, 90°, 180°, 270°}; odd-r rings are staggered to
+φ ∈ {45°, 135°, 225°, 315°} so adjacent-ring cells never align radially.
 
 | Detector ID | θ (polar) | φ (azimuthal) |
 |---|---|---|
-| EJ309-0 | 30° | 0° |
-| EJ309-1 | 30° | 180° |
-| EJ309-2 | 60° | 90° |
-| EJ309-3 | 60° | 270° |
-| EJ309-4 | 90° | 0° |
-| EJ309-5 | 90° | 180° |
-| EJ309-6 | 120° | 90° |
-| EJ309-7 | 120° | 270° |
+| EJ309-0  | 30°  | 0°   |
+| EJ309-1  | 30°  | 90°  |
+| EJ309-2  | 30°  | 180° |
+| EJ309-3  | 30°  | 270° |
+| EJ309-4  | 48°  | 45°  |
+| EJ309-5  | 48°  | 135° |
+| EJ309-6  | 48°  | 225° |
+| EJ309-7  | 48°  | 315° |
+| EJ309-8  | 66°  | 0°   |
+| EJ309-9  | 66°  | 90°  |
+| EJ309-10 | 66°  | 180° |
+| EJ309-11 | 66°  | 270° |
+| EJ309-12 | 84°  | 45°  |
+| EJ309-13 | 84°  | 135° |
+| EJ309-14 | 84°  | 225° |
+| EJ309-15 | 84°  | 315° |
+| EJ309-16 | 102° | 0°   |
+| EJ309-17 | 102° | 90°  |
+| EJ309-18 | 102° | 180° |
+| EJ309-19 | 102° | 270° |
+| EJ309-20 | 120° | 45°  |
+| EJ309-21 | 120° | 135° |
+| EJ309-22 | 120° | 225° |
+| EJ309-23 | 120° | 315° |
 
 **Detection goals:**
 - Prompt fission neutrons: detected via proton recoil (n-p elastic scattering
