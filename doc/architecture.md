@@ -271,4 +271,64 @@ The `LaBr3_Ce` material block in `src/DetectorConstruction.cc::DefineMaterials()
 - **`CMakeLists.txt:32-39`** `configure_file`-copies all `src/macros/*.mac` into `build/` at *cmake* time — so editing a macro requires re-running `cmake`, not just `make`. New macros are auto-picked up by the glob.
 - **`build/`** — out-of-tree build directory; deleted and recreated freely.
 - **`data/<UTC-timestamp>/`** — repo-root output directory, one subdirectory per `/run/beamOn` invocation. Contains `hits.csv` and `events.csv`. `MyRunAction::BeginOfRunAction` resolves the repo root by walking up from the executable's CWD looking for `nuclear-fission.cc`, then creates the timestamped directory. See "CSV output and run lifecycle" above for full details.
-- **`analysis/`, `plots/`** — empty placeholders for downstream post-processing of CSV data once Phase B/C land.
+- **`analysis/`, `plots/`** — Python post-processing of CSV data and the PDF outputs it produces. See the *Post-simulation analysis* section below.
+
+---
+
+# Post-simulation analysis
+
+Everything below this line is **outside the Geant4 pipeline**. After a run finishes and `data/<UTC>/{hits.csv, events-truth.csv, truth-record.csv}` are on disk, separate Python scripts under `analysis/` consume those files and emit plots under `plots/<UTC>_plots/`. None of this code touches Geant4, the run manager, or any C++ component — it is pure offline post-processing of the CSV outputs documented above.
+
+This section is summary-level. Implementation lives in the scripts themselves and is short enough to read end-to-end without an architectural map.
+
+## Layout
+
+```
+analysis/
+├── ground-truth-analysis/        consume events-truth.csv + truth-record.csv;
+│   │                             do NOT consume hits.csv. The plots they produce
+│   │                             would be byte-identical with all detectors removed.
+│   ├── plot_energy_spectra.py        per-particle-category initial-KE histograms
+│   ├── plot_event_multiplicities.py  per-event multiplicity histograms
+│   ├── plot_event_energy_budgets.py  per-event Sankey of fission energy partition
+│   └── requirements.txt              pandas, numpy, matplotlib, plotly, kaleido
+│
+└── daq/                          placeholders for detector-stage analysis
+                                  (consume hits.csv); not yet wired up.
+```
+
+Each script takes one positional argument — the run timestamp (e.g. `20260430T051304`) — and resolves the repo root by walking up from the script file looking for `nuclear-fission.cc` (same convention as `MyRunAction::BeginOfRunAction`).
+
+## Outputs
+
+For an input run `data/<ts>/`, each ground-truth script writes into one fixed subdirectory of `plots/<ts>_plots/`:
+
+```
+plots/<ts>_plots/
+├── energy-spectra/         7 PDFs from plot_energy_spectra.py — one per category
+│                           (neutron / gamma / beta / alpha / ion / other), plus
+│                           an extra energy_spectrum_beta_with_deltas.pdf with NO
+│                           creator_process filter, to expose the delta-electron
+│                           pile-up that the filtered plot suppresses.
+├── multiplicities/         8 PDFs from plot_event_multiplicities.py — prompt and
+│                           chain n/γ, plus chain-only β / α / ion / other.
+└── energy-budgets/         N PDFs from plot_event_energy_budgets.py (one per
+                            fission event), each a two-stage Sankey diagram.
+```
+
+## Conventions shared across scripts
+
+- **Particle bucketing** matches the `n_chain_*` columns of `events-truth.csv`: `neutron`, `gamma`, `beta` (`e-`/`e+`), `alpha`, `ion` (any nucleus matching `^[A-Z][a-z]?\d+$`), `other` (anti-νₑ, exotics). Fission-fragment isotopes (Xe137, Cs139, Ba142, …) all collapse into `ion` rather than getting per-species PDFs.
+- **EM transport secondaries are filtered out by default.** `plot_energy_spectra.py` (except the `_with_deltas` variant) and `plot_event_energy_budgets.py` apply `creator_process ∈ {primary, nFissionHP, RadioactiveDecay}` and drop everything else (`ionIoni`, `eIoni`, `phot`, `compt`, `eBrem`). Without this filter ~97 % of `truth-record.csv` rows are sub-keV delta electrons from heavy-ion ionization inside the foil; their kinetic energy is already part of the parent fragment's KE budget so plotting them adds no independent information. The double-counting argument is developed in `doc/theory.md`.
+- **Per-fission normalization.** `plot_energy_spectra.py` divides each histogram by the number of fission events in the run (`weights = 1 / N_events`), so the y-axis reads *tracks per fission per bin* — i.e. the expected single-fission spectrum, with statistics that scale with the run size. The multiplicity script is not normalized (each entry is already one event).
+- **Sankey topology.** `plot_event_energy_budgets.py` uses Plotly + Kaleido for static PDF export. Three node columns: `Total → {Prompt, Decay chain} → 9 leaf buckets` (`Fragments`, `Prompt neutrons`, `Prompt gammas`, `Decay betas`, `Decay gammas`, `Decay alphas`, `Anti-neutrinos`, `Daughter recoils`, `Decay other`). Empty buckets are dropped — no zero-width ribbons. Each ribbon is labeled with bucket name, summed MeV, and particle count.
+- **What "Total tracked KE" means in the Sankey.** The source node is the sum of `initial_KE_MeV` over every track in the event that passes the nuclear-process filter — the primary thermal neutron, the two fragments, prompt n/γ, and every track born during fragment β-decays cascading toward stability. This approximates the **full Q-value** of `U-235 + n → stable daughters + emitted particles + photons + neutrinos`, accumulated through the entire simulated decay chain — *not* just the prompt-fission Q-value. The Prompt branch alone is ~182 MeV (fragments ~169 MeV, prompt n ~5 MeV, prompt γ ~7 MeV); the Decay-chain branch typically adds another 15–25 MeV of β KE + decay γ + anti-νₑ as the unstable fragments cascade to stability. The 0.025 eV input thermal-neutron KE is mathematically included in the sum but negligible (~10⁻¹⁰ of the total). Run-level provenance such as `n_thermal_neutrons` is intentionally **not** shown in the per-event Sankey title — only one of those N neutrons caused the event being drawn, so a run-level count carries no meaning at per-event scope. It does still appear in `plot_energy_spectra.py`'s info textbox, where it is the run-size denominator behind the /N_events normalization.
+
+## Open observation — constant per-event fragment KE
+
+Across the test runs accumulated so far (e.g. `data/20260430T051304/`, 11 fission events), every event reports an **identical** total fragment kinetic energy of ~169.1 MeV, despite the events drawing from a range of distinct (A, Z) fragment-PDG pairs. ENDF B-VII fragment-yield data carries a per-pair Q-value spread of several MeV, so a constant value across pairs is suspicious. Two non-exclusive explanations:
+
+- `G4ParticleHPFission` may be sampling **total** fragment KE from a global Q-value distribution decoupled from the specific (A, Z) pair (i.e. mass-yield and TKE are sampled separately and not constrained pairwise).
+- The post-step may be assigning each fragment a **fixed** fraction of a fixed total KE, with the per-pair physics absorbed into the prompt-neutron multiplicity instead.
+
+Worth a follow-up trace through `G4ParticleHPFissionData` / `G4ParticleHPFissionFS` (and their Madland–Nix usage) to confirm which mechanism is in play before drawing physics conclusions from per-event fragment KE. Not a blocker for the analysis pipeline — flagged for the next time someone is in the HP source.

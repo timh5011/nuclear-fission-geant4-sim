@@ -1,4 +1,4 @@
----------------------------------------
+-------------------------------------------------------------------------------------------------------------------
 
 log confirms:
                                                                                                                                                                                                         
@@ -17,7 +17,7 @@ log confirms:
   The simulation is doing exactly what it should: a thermal neutron enters the uranium foil, fission occurs, and you get the full secondary shower. The asymmetry you see (more tracks going one        
   direction) is just the random momentum conservation of one particular fission event.
                                                                                       
----------------------------------------
+-------------------------------------------------------------------------------------------------------------------
 
 what do you mean by this: One caveat worth flagging: pure ²³⁵U at 19.1 g/cm³ in cubic-cm volumes is unphysical (you'd be near critical mass at ~52 kg of bare metal). For a sub-cm cube you're fine,  
   but don't scale the cube up                                                                                                                                                                           
@@ -81,7 +81,7 @@ what do you mean by this: One caveat worth flagging: pure ²³⁵U at 19.1 g/cm�
   - ~78% of fragments escape transversely into air with ~12 cm of range                                                                                                                                 
   - No production-cut issues                                           
 
-  ---------------------------------------
+  -------------------------------------------------------------------------------------------------------------------
 
     2. What do you want to detect / measure?                                                                                                                                                              
   The particles hitting the scintillator will be a mix:                                                                                                                                                 
@@ -92,7 +92,7 @@ what do you mean by this: One caveat worth flagging: pure ²³⁵U at 19.1 g/cm�
                                                                                                                                                                                                         
   Are you interested in all of these, or focusing on one? For example, fragment detection is very different from neutron detection.     
 
-  --------
+  -------------------------------------------------------------------------------------------------------
   ---                                                                                           
   UIUC — inherits from FTFP_BERT                                                                                                                                                                        
                                                                                                                                                                                                         
@@ -137,7 +137,7 @@ what do you mean by this: One caveat worth flagging: pure ²³⁵U at 19.1 g/cm�
                                                                                                                                                                                                         
   The fission sim avoids this entirely by starting from G4VModularPhysicsList and being explicit about everything it registers — no hidden inherited state to conflict with.
 
-  ---------------------------------------
+  --------------------------------------------------------------------------------------------------------------------------------------
 
   Pre-detector TODOs (flagged before scintillator implementation):
 
@@ -154,3 +154,48 @@ what do you mean by this: One caveat worth flagging: pure ²³⁵U at 19.1 g/cm�
     for prompt fission neutrons (ns–µs) but kills delayed neutrons from fragment β-decay
     chains (ms–s) before they reach the detector. Register G4NeutronTrackingCut and raise
     the time limit if delayed-neutron detection is in scope.
+
+------------------------------------------------------------------------------------------------------------------
+note on the sankey diagram energy budget per fission event:
+not sure its being done properly but leave it for now:
+
+that sounds like a good plan. remove from the energy budget per fission, but keep it in the energy spectras. another thing: how are you defining the initial energy in the budget. id assume its the    
+  amount of energy that the uranium releases (so the difference between the uranium's initial energy state and the lower energy state that it settles into after the neutron knocks it out of its initial 
+   state). is this what you did?                                                                                                                                                                          
+                                                                                                                                                                                                          
+⏺ Reading the existing plan file first.                                                                                                                                                                   
+                                     
+  Read 1 file (ctrl+o to expand)                                                                                                                                                                          
+                                                      
+⏺ Read the existing plan. It covers the original implementation, which is now done. This new request is a small refinement (different task), so I'll overwrite the file with a focused plan for just this 
+  change.                                                                  
+                                                                                                                                                                                                          
+  First, let me answer your question about how I'm defining initial energy in the budget — because it informs what should go in the plan as a doc addition.                                               
+                                                                                                                                                                                                          
+  What "Total tracked KE" actually represents in the Sankey                                                                                                                                               
+                                                        
+  The source node of the Sankey sums initial_KE_MeV over every track in the event that passes the nuclear-process filter. That's:                                                                         
+  
+  - The primary thermal neutron (1 track, ~2.5e-8 MeV, negligible)                                                                                                                                        
+  - The two fission fragments (~169 MeV combined)       
+  - Prompt neutrons (~5 MeV combined)                                                                                                                                                                     
+  - Prompt gammas (~7 MeV combined)                     
+  - Every track born inside RadioactiveDecay steps as the unstable fragments β-decay toward stability — betas, decay gammas, alphas (rare), anti-neutrinos, daughter-nucleus recoils                      
+                                                                                                                                                                                                          
+  Each of those KE values is what Geant4 hands the particle at the instant of its creation. So summing them is summing all the kinetic energy released into particles by the entire nuclear cascade kicked
+   off by this one fission event.                                                                                                                                                                         
+                                                                                                                                                                                                          
+  Mapping to your mental model — yes, roughly. But two things to be precise about:                                                                                                                        
+  
+  1. The "lower energy state" you reach is the end of the decay chain, not immediately-post-fission. The fission Q-value alone is ~182 MeV (fragments + prompt n + prompt γ). The cumulative decay-chain  
+  Q-value adds another ~15–25 MeV (β KE + decay γ + anti-νₑ) as the unstable fragments cascade through their β⁻ decays to stability. My Sankey's "Total tracked KE" is the sum of both — closer to ~200
+  MeV in well-decayed events, closer to ~182 MeV if the run is cut off before late decays fire.                                                                                                           
+  2. Energy-conservation note. Strictly, Q = (m_target + m_neutron − Σ m_products) c². Geant4 conserves this by giving each emitted particle a kinetic energy that, summed across all products, equals Q
+  (rest masses of products are accounted for separately). So summing initial_KE_MeV of all emitted particles equals the cumulative Q-value to whatever decay-chain depth was simulated. Anti-neutrinos    
+  count and are visible as their own ribbon in the Sankey; rest-mass differences between fragment generations don't appear because they're absorbed into the next decay's Q.
+                                                                                                                                                                                                          
+  So your intuition is right with one refinement: it's the U-235's mass-energy excess relative to stable daughters (plus the input neutron), not relative to the immediate post-fission state. The Prompt 
+  branch in the Sankey is the latter; Total = Prompt + Decay chain is the former.
+                                                                                                                                                                                                          
+  The plan has two changes: (1) drop the misleading thermal neutrons fired line from the per-event Sankey title, (2) add a short clarification of "Total tracked KE" semantics to doc/architecture.md so  
+  this question doesn't have to be answered from scratch next time.
