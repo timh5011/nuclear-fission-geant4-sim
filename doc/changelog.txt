@@ -199,3 +199,254 @@ that sounds like a good plan. remove from the energy budget per fission, but kee
                                                                                                                                                                                                           
   The plan has two changes: (1) drop the misleading thermal neutrons fired line from the per-event Sankey title, (2) add a short clarification of "Total tracked KE" semantics to doc/architecture.md so  
   this question doesn't have to be answered from scratch next time.
+
+  -------------------------------------------------------------------------------------------------------------------
+
+  im a bit confused how energy conservation is not violated. you say that the sum of the energy of the full decay chain is greater than then energy of the sum of the fission prompt emission?            
+                                                                                                                                                                                                          
+⏺ Energy conservation is not violated. The extra ~18 MeV is real energy, but it doesn't come from the prompt-fission step — it comes from converting the rest mass of the unstable fragments into kinetic 
+  energy as they β-decay over time. Let me lay out the full bookkeeping.                                                                                                                                  
+                                                                                                                                                                                                          
+  The full energy balance, all-in-one                                                                                                                                                                     
+                                                                                                                                                                                                          
+  Consider the entire reaction from initial state to fully-stable end state:                                                                                                                              
+                                                                                                                                                                                                          
+  n + U-235  →  (everything stable, plus all photons and neutrinos ever emitted)                                                                                                                          
+                                                                                                                                                                                                          
+  The mass of the left side exceeds the mass of the right side by ~200 MeV/c². That ~200 MeV is the total Q-value to stability — every joule of energy that this reaction will ever release. Energy       
+  conservation says this 200 MeV must show up as kinetic energy + photon energy + neutrino energy of the products. Always. No exceptions.                                                                 
+                                                                                                                                                                                                          
+  But the mass-to-energy conversion doesn't all happen at once. It's released in stages.                                                                                                                  
+  
+  Stage 1: prompt fission (~182 MeV released)                                                                                                                                                             
+                                                        
+  n + U-235  →  Xe137* + Sr97* + 3n + 7γ                                                                                                                                                                  
+                                                                                                                                                                                                          
+  (starred = unstable). Mass balance:                                                                                                                                                                     
+                                                                                                                                                                                                          
+  m(n) + m(U-235)  −  [m(Xe137*) + m(Sr97*) + 3·m(n)]  ≈  182 MeV / c²                                                                                                                                    
+                                                                                                                                                                                                          
+  So at the moment of fission, ~182 MeV of rest mass disappears, reappearing as:                                                                                                                          
+  - ~165 MeV fragment KE                                                                                                                                                                                  
+  - ~5 MeV prompt-neutron KE                                                                                                                                                                              
+  - ~7 MeV prompt-gamma energy                          
+  - (small mass change from neutron count, etc.)
+                                                                                                                                                                                                          
+  Notice the unstable fragments still carry rest mass that's heavier than what they will eventually become. That rest-mass excess is energy that's "stored" in the fragments, just not yet released.
+                                                                                                                                                                                                          
+  Stage 2: decay chain (~18 MeV released, in pieces)                                                                                                                                                      
+                                                                                                                                                                                                          
+  Now Xe137* beta-decays:                                                                                                                                                                                 
+                                                        
+  Xe137*  →  Cs137* + e⁻ + ν̄_e
+                                                                                                                                                                                                          
+  Mass balance for this step:
+                                                                                                                                                                                                          
+  m(Xe137*)  −  [m(Cs137*) + m(e⁻)]  ≈  4.16 MeV / c²   
+                                                                                                                                                                                                          
+  So another 4.16 MeV of rest mass disappears, reappearing as:                                                                                                                                            
+  - ~1.4 MeV β KE (mean of the continuous spectrum)                                                                                                                                                       
+  - ~2.7 MeV ν̄ KE                                                                                                                                                                                         
+  - ~0.07 MeV Cs137 recoil                              
+                                                                                                                                                                                                          
+  This 4.16 MeV did not come from the fragment's earlier 70 MeV kinetic energy — that 70 MeV had already been spent slowing the fragment down by ionizing the foil (heat + delta electrons). The 4.16 MeV 
+  is new energy, freshly converted from Xe137's rest-mass excess into kinetic energy of its decay products.                                                                                               
+                                                                                                                                                                                                          
+  Then Cs137* may decay further (Cs137 → Ba137 + e⁻ + ν̄ + γ), releasing another ~1 MeV. And so on, until you reach a stable nucleus. Add up all those decay-step Q-values along both fragments' chains and
+   you get the missing ~18 MeV.                         
+                                                                                                                                                                                                          
+  So the total = prompt + chain                         
+
+  total Q to stability  =  Q_prompt          +  Σ Q_decay_step
+                        ≈  182 MeV           +  18 MeV                                                                                                                                                    
+                        ≈  200 MeV                                                                                                                                                                        
+                                                                                                                                                                                                          
+  Both terms are real, distinct mass-to-energy conversion events happening at different points in time. Both are accounted for in the truth-record (each particle's initial_KE_MeV is its KE at the moment
+   of birth). Summing all those KEs across the event gives ~200 MeV — the full Q-value — which equals the rest-mass deficit between the initial state and the stable end state.
+                                                                                                                                                                                                          
+  Why this matters for the Sankey                       
+
+  A perfectly energy-conserving Sankey would need to model two independent things at every decaying ion node:                                                                                             
+  
+  1. The parent's own KE getting dissipated locally as it slows in the foil (~70 MeV → heat). This needs an outflow to a "dissipated" sink.                                                               
+  2. New energy entering the diagram from rest-mass conversion during the decay step (+4.16 MeV at Xe137's decay node). This needs an inflow from a "rest mass" source.
+                                                                                                                                                                                                          
+  If you draw both of those, the Sankey balances exactly. But you've doubled the visual complexity: every ion node now has two extra ribbons (one going to a dissipation sink, one coming from a          
+  mass-source). The diagram is dominated by uninformative dissipation flows.                                                                                                                              
+                                                                                                                                                                                                          
+  The simpler convention I proposed — "child flow width = child's birth KE; parent's leftover KE just goes into the node and isn't tracked further" — sacrifices strict node-level conservation in        
+  exchange for a clean parent→child decay-chain story. The TOTAL of the diagram (source + injected mass-energy at each decay) still equals 200 MeV; it's just that the 18 MeV doesn't appear as a single
+  source flow, it appears spread across the chain at each decay step.                                                                                                                                     
+                                                        
+  That's why I asked about the source-node value:                                                                                                                                                         
+  
+  - Option (a) — source = ~182 MeV. Honest about chronology: only the prompt-fission Q-value flows out of fission. The remaining ~18 MeV enters the diagram piecewise at each downstream decay node,      
+  conceptually injected from rest-mass conversion. Node widths grow at each decay step rather than diminish. This is the convention real decay-chain Sankeys use.
+  - Option (b) — source = ~200 MeV. Visually says "all 200 MeV came from fission," which is a half-truth: the energy ultimately traces back to the U-235's mass excess, but it wasn't released at the     
+  fission instant.                                                                                                                                                                                        
+  
+  Either is defensible; (a) is more chronologically truthful, (b) is more "total budget at a glance." Now that you have the full physics picture, want me to re-pose the question? 
+
+------------------------
+
+  okay im leaning towards following your advice and making the initial mode the prompt emission Q value, but I am wondering why we could not have something like: each ribon is the total energy of that  
+  particle group. so we wouldnt need two separate ribbons for kinetic and rest energy, we would just sum them. would this not give s cleak sankey diagram with one ribbon per particle and still show the 
+   full energy budget? is this not standard?                                                                                                                                                              
+                                                                                                                                                                                                          
+⏺ Your intuition is exactly right at the math level — and it's a clean idea. The reason it doesn't work in practice is a scale problem, not a physics problem. Let me show you.                           
+                                     
+  Your idea, written out                                                                                                                                                                                  
+   
+  Define each particle's width as E_total = KE + mc². Then at any decay node, energy conservation is automatic — that's just relativistic energy conservation written down:                               
+                                                        
+  E_total(Xe137*)  =  E_total(Cs137*) + E_total(e⁻) + E_total(ν̄)                                                                                                                                          
+                                                                                                                                                                                                          
+  Both sides balance to ~10⁻⁹ relative precision because that's a literal statement of conservation of total relativistic energy. So mathematically, yes — every node would balance, every link width     
+  would be a real physical quantity, and the diagram would be exactly energy-conserving. You're not missing anything conceptually.                                                                        
+                                                                                                                                                                                                          
+  Why it breaks visually                                
+
+  Plug in the actual numbers:
+
+  ┌──────────┬──────────────┬────────────┬────────────────────┐                                                                                                                                           
+  │ Particle │     mc²      │ typical KE │ E_total = KE + mc² │
+  ├──────────┼──────────────┼────────────┼────────────────────┤                                                                                                                                           
+  │ Xe137*   │ ~127,600 MeV │ 70 MeV     │ ~127,670 MeV       │
+  ├──────────┼──────────────┼────────────┼────────────────────┤
+  │ Cs137*   │ ~127,600 MeV │ ~0.07 MeV  │ ~127,600 MeV       │                                                                                                                                           
+  ├──────────┼──────────────┼────────────┼────────────────────┤                                                                                                                                           
+  │ e⁻       │ 0.511 MeV    │ 1.5 MeV    │ ~2.0 MeV           │                                                                                                                                           
+  ├──────────┼──────────────┼────────────┼────────────────────┤                                                                                                                                           
+  │ ν̄_e      │ ~0           │ 2.7 MeV    │ ~2.7 MeV           │
+  └──────────┴──────────────┴────────────┴────────────────────┘                                                                                                                                           
+                                                        
+  So Xe137 is a ribbon ~127,670 MeV wide. The β is ~2 MeV wide. Ratio: ~64,000:1. On any reasonable canvas, the β would be one pixel — invisible. Worse, Xe137 → Cs137 would appear as a ribbon of        
+  nearly-uniform width, because the rest mass dominates and the 4-MeV decay Q-value is rounding error against 127 GeV. The whole point of the diagram — showing where fission's energy goes — gets buried
+  under rest-mass bookkeeping that doesn't change much across the chain.                                                                                                                                  
+                                                        
+  Could we subtract a common reference?
+
+  Reasonable instinct: subtract some reference rest mass so the rest-mass terms cancel and you're left with "energy that will be released." For example: define E_avail = KE + (m − m_stable_endpoint)c². 
+  Fragment near birth has E_avail = 70 + (M_Xe137 − M_stable)c² ≈ 70 + 18 ≈ 88 MeV. At the end of the chain, all E_avail has converted to KE of stable particles + photons + neutrinos.
+                                                                                                                                                                                                          
+  This almost works — but it still doesn't conserve at intermediate ion nodes, because the parent's 70 MeV of birth KE doesn't transfer to children. It dissipates locally as ionization heat in the foil 
+  between birth and decay (the fragment ranges out in microns, depositing ~70 MeV as deltas + bulk heat, and then β-decays at rest with only ~4 MeV of Q to give the children). That ~70 MeV is genuinely
+  gone from the visible particle stream — not stored, not transferred, just heat in the medium. No definition of "particle width" can recover it without an explicit "heat dissipation" sink as a separate
+   node.                                                
+
+  Is this standard?
+
+  Not really — fission energy-budget visualizations are usually one of two things, neither a full decay-chain Sankey:                                                                                     
+  
+  1. Static partition pie/bar charts (Lemmel, JEFF, ENDF reports): "Fragment KE 169.1, prompt n 4.79, prompt γ 6.97, β 6.98, β γ 6.30, ν̄ 8.75 — total 202.9 MeV" written as bars or wedges. No topology,  
+  no flow, just the partition. The reason this is standard is exactly the conservation-vs-clarity trade-off you just bumped into.
+  2. Decay-chain diagrams (Karlsruhe Nuklidkarte, isotope explorer apps): topology with arrows labeled by Q-value, half-life, and branching ratio per step — but they're not Sankeys, they're DAGs with   
+  annotated edges, and the "width" of an edge isn't an energy.                                                                                                                                            
+  
+  A decay-chain Sankey with literal-width-is-energy is genuinely unusual. We're a little off-piste, so the convention has to be picked rather than inherited.                                             
+                                                        
+  What this leaves you with                                                                                                                                                                               
+                                                        
+  Three real options:                                                                                                                                                                                     
+                                                        
+  - (a) Width = particle birth KE, ignore in-flow ≠ out-flow at ion nodes. What I originally recommended. Source is prompt Q (~182 MeV); chain Q-values get "injected" at each downstream decay node as   
+  new ribbons appear. Clean, readable, but the reader has to know that node-level conservation isn't enforced — the diagram is a chronological view of "energy released into particles," not a strict
+  energy ledger.                                                                                                                                                                                          
+  - (b) Width = E_total (your idea). Strictly conservative, useless visually (rest-mass dominance).
+  - (c) Width = particle birth KE plus an explicit "Ionization heat" sink that each ion node drains its un-transferred KE into. Conservative and readable — node widths balance because the dissipated    
+  portion goes somewhere visible. But requires an extra big node (the heat sink would be ~165 MeV, easily the dominant ribbon in the diagram), and you're now modeling assumptions about which particles  
+  dissipate locally vs. escape (fragments dissipate fully; prompt neutrons escape; anti-νₑ definitely escape; betas mostly dissipate; etc.) — assumptions not present in the truth-record itself.         
+                                                                                                                                                                                                          
+  (c) is the most physically honest option that's also visually usable. Want me to switch the plan to that? It would mean adding one new node ("Ionization heat" or similar) collecting the dissipation   
+  outflow from each ion, and committing to a convention for which particle types dissipate locally vs. escape (which I'd hard-code based on standard particle ranges in the foil — fragments and alphas
+  dissipate, neutrons/gammas/anti-νₑ escape, betas a coin flip but lean toward dissipate). Or stick with (a) and just put a note in the title that the diagram is not meant to enforce node-level         
+  conservation. 
+
+
+  ----------
+
+  good point. i didnt think about us losing additivity. thats a deal breaker. I dont really like showing only kinetic energy. what I would want is the rest mass + kinetic energy sankey diagram, but I   
+  get that this has the scale issue. is there a standard type of diagram that is used in nuclear physics to show the energy budget and respect energy conservation                                        
+                                                                                                                                                                                                          
+⏺ Honest answer: there isn't a standard nuclear-physics Sankey for fission decay chains — and it's exactly because of the conservation-vs-clarity tension we keep hitting. What's standard in the field is
+   two distinct diagram types, used in parallel, each doing one job well:
+                                                                                                                                                                                                          
+  Standard #1: Static energy-partition diagram (for the budget)                                                                                                                                           
+                                                                                                                                                                                                          
+  The textbook fission energy budget is always drawn as a pie chart or stacked bar with ~6 wedges:                                                                                                        
+                                                        
+  ┌────────────────────┬───────┐                                                                                                                                                                          
+  │      Channel       │  MeV  │                        
+  ├────────────────────┼───────┤                                                                                                                                                                          
+  │ Fragment KE        │ 169.1 │
+  ├────────────────────┼───────┤                                                                                                                                                                          
+  │ Prompt neutron KE  │ 4.8   │                        
+  ├────────────────────┼───────┤                                                                                                                                                                          
+  │ Prompt γ           │ 7.0   │
+  ├────────────────────┼───────┤                                                                                                                                                                          
+  │ β KE (decay chain) │ 7.0   │                        
+  ├────────────────────┼───────┤                                                                                                                                                                          
+  │ β-delayed γ        │ 6.3   │
+  ├────────────────────┼───────┤                                                                                                                                                                          
+  │ Anti-νₑ (escape)   │ 8.7   │                        
+  ├────────────────────┼───────┤                                                                                                                                                                          
+  │ Total              │ 202.9 │                        
+  └────────────────────┴───────┘                                                                                                                                                                          
+  
+  (Numbers from JEFF-3.3 / ENDF/B-VIII.0 for thermal U-235.) No topology, no chronology, no parent-child information — just where the 200 MeV ends up. Conservation is trivial because it's a partition:  
+  the wedges sum to the Q-value by construction. This is the diagram you see in Lamarsh, Glasstone & Sesonske, and every reactor-physics textbook. It's the answer to "where does the energy go?" and it's
+   been the standard for ~50 years.                                                                                                                                                                       
+                                                        
+  Standard #2: Nuclear level scheme / decay scheme (for topology + conservation)                                                                                                                          
+  
+  For showing how energy is released along a decay chain, the standard is the level scheme (also called decay scheme). You see these in NNDC's ENSDF database, the Karlsruhe Nuklidkarte, and in any      
+  nuclear-data reference.                               
+                                                                                                                                                                                                          
+  Layout:                                               
+
+  - Vertical axis: mass excess of the system (or equivalently, energy above the stable end-state).                                                                                                        
+  - Each nuclide is a horizontal line at its mass-excess energy.
+  - Each decay step is an arrow from a higher level to a lower level, labeled with the Q-value of the step plus what's emitted (β⁻ + ν̄ + γ_E1 + γ_E2 + …) and the branching ratio.                        
+  - The vertical drop between two consecutive levels equals exactly the Q-value of the decay → conservation is enforced visually as "energy decreases monotonically toward the stable ground state."      
+                                                                                                                                                                                                          
+  For Xe137 → Cs137 → Ba137*(stable) you'd see:                                                                                                                                                           
+                                                                                                                                                                                                          
+  Xe137*  ── E_excess = +5.1 MeV  ←───── start (β⁻ decay, Q = 4.16 MeV)                                                                                                                                   
+                       │                                                                                                                                                                                  
+                       ↓  emits e⁻ (~1.4 MeV mean) + ν̄ (~2.7 MeV) + γ_661.7
+  Cs137*  ── E_excess = +0.94 MeV (β⁻ decay, Q = 1.18 MeV, t½ = 30 yr)                                                                                                                                    
+                       │                                                                                                                                                                                  
+                       ↓  emits e⁻ + ν̄ + γ_283.5                                                                                                                                                          
+  Ba137   ── E_excess = 0.0 MeV  ←───── stable                                                                                                                                                            
+                                                                                                                                                                                                          
+  These respect conservation exactly because they're energy-level diagrams: vertical position is energy, vertical drops are Q-values, and the diagram makes the "amount of remaining mass-energy to be    
+  released" visible as the height above the stable line. They also handle multiple emitted particles per step naturally (one arrow per emission, sub-labeled with energy).                                
+                                                                                                                                                                                                          
+  What level schemes don't do well: aggregate budget (you can't read "fragment KE = 169 MeV" off them), and parallel chains from two independent fragments (typically drawn as separate diagrams).        
+  
+  The third path nobody really uses                                                                                                                                                                       
+                                                        
+  Strict-conservation Sankeys of decay chains do appear, but rarely, and almost always with an explicit "heat dissipation" or "non-radiative" sink to absorb the parent's leftover KE — exactly option (c)
+   from earlier. You see this occasionally in reactor-physics calorimetric diagrams: "of the 200 MeV per fission, 90 % stays in the fuel as heat, 5 % deposits in moderator, 4 % escapes as neutrinos,
+  ..." That kind of diagram is a fate Sankey (where each MeV ends up depositing), not a decay-tree Sankey (parent → child topology). It conserves trivially because it tracks "deposition location" rather
+   than "particle identity."                            
+
+  What I'd recommend for your tool                                                                                                                                                                        
+  
+  Pick the diagram type by what question you want to answer:                                                                                                                                              
+                                                        
+  - "Where does fission's 200 MeV end up?" → static energy-partition bar/pie chart per event. Six wedges, conservation trivial, totally standard, easy to compare across events. (We essentially had this 
+  at the leaf level of the original 9-bucket Sankey, just wrapped in unnecessary topology.)
+  - "How does the decay chain unfold from each fragment?" → a level-scheme-style staircase per fragment, generated from the truth-record. Vertical axis = mass excess remaining; each step labeled with Q 
+  + emissions + count.                                                                                                                                                                                    
+  - "Where does the energy ultimately deposit (foil, moderator, escape)?" → fate Sankey. But this is detector-stage, not truth-stage — needs hits.csv and the geometry, not the ground-truth records.
+  Belongs in analysis/daq/, not ground-truth-analysis/.                                                                                                                                                   
+                                                        
+  If you want to keep the existing Sankey infrastructure rather than swap diagram types, option (c) (KE Sankey with explicit ionization-heat sink) gets closest to a conservation-respecting Sankey, at   
+  the cost of being an unconventional adaptation rather than a standard diagram.
+                                                                                                                                                                                                          
+  Honestly though, given what you've already built — a chronological per-event diagram showing parent → child decay topology — the most useful "standard nuclear physics" companion would be adding a     
+  static partition bar chart per event as a separate small subplot or PDF, and accepting that the Sankey itself is a topological view, not a strict energy ledger. The two diagrams together would cover
+  both bases the way the field actually does it.                                                                                                                                                          
+                                                        
+  Want me to update the plan to reflect a "Sankey for topology + bar chart for conservation" two-diagram approach? Or stick with picking one of (a)/(b)/(c) for the Sankey alone?
