@@ -48,6 +48,9 @@ void MyTrackingAction::PreUserTrackingAction(const G4Track* track) {
     // this early-return to start logging photons here too.
     if (pd == G4OpticalPhoton::Definition()) return;
 
+    // I think this is where I can say to not inclyde delta electrons in the truth record as well but im not sure
+    // also not sure if the creator processes ionIoni and eIoni uniquely characterize these particles
+
     const G4int pdg = pd->GetPDGEncoding();
 
     TruthRow row;
