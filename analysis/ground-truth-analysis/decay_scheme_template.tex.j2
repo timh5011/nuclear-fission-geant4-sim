@@ -1,0 +1,59 @@
+\documentclass[border=4mm]{standalone}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{tikz}
+\usepackage{amsmath, amssymb}
+\usetikzlibrary{arrows.meta, positioning, calc}
+
+\begin{document}
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    levelline/.style={draw=black, line width=0.7pt},
+    betam/.style={-{Stealth[length=2.5mm]}, color=red!75!black, thick},
+    betap/.style={-{Stealth[length=2.5mm]}, color=blue!75!black, thick},
+    alpha/.style={-{Stealth[length=2.5mm]}, color=orange!80!black, thick},
+    gammaarrow/.style={-{Stealth[length=2mm]}, color=green!50!black, thick, dashed},
+    arrowlabel/.style={font=\scriptsize, fill=white, inner sep=2pt,
+                       outer sep=1pt, align=left},
+    garrowlabel/.style={font=\scriptsize, fill=white, inner sep=2pt,
+                        outer sep=1pt, align=left, xshift=5mm},
+    energylabel/.style={font=\tiny, color=black!60},
+    excitedlabel/.style={font=\tiny, color=black!40},
+    terminallabel/.style={font=\scriptsize\itshape, color=black!60,
+                          text width=2.6cm, align=left},
+    columnhead/.style={font=\bfseries\large},
+]
+
+% Title
+\node[anchor=south west, font=\bfseries\large] at ({{ '%.2f'|format(title_x) }}, {{ '%.2f'|format(title_y) }}) { {{- title -}} };
+\node[anchor=south west, font=\small] at ({{ '%.2f'|format(subtitle_x) }}, {{ '%.2f'|format(subtitle_y) }}) { {{- subtitle -}} };
+
+% Column headers (nuclide symbols above topmost level in each column)
+{% for c in columns %}
+\node[columnhead, anchor=south] at ({{ '%.2f'|format(c.x) }}, {{ '%.2f'|format(c.header_y) }}) {${}^{ {{- c.a -}} }\mathrm{ {{- c.symbol -}} }$};
+{% endfor %}
+
+% Y-axis: a single rotated label (no axis arrow / no ticks; cumulative-Q
+% is annotated next to each level line via lv.right_label).
+\node[font=\small, rotate=90, anchor=south]
+    at ({{ '%.2f'|format(yaxis_x) }}, {{ '%.2f'|format((yaxis_top + yaxis_bot)/2) }})
+    {cumulative $Q$ released downward (per-level values shown at right)};
+
+% Levels: short horizontal lines, with optional annotations.
+%   right_label    — cumulative-Q at level (anchor: south west, sits above)
+%   excited_label  — E* annotation for excited daughter levels (above level)
+%   terminal_label — "(stable / no decay in sim window)" (below level, wraps)
+{% for lv in levels %}
+\draw[levelline] ({{ '%.2f'|format(lv.x_left) }}, {{ '%.2f'|format(lv.y) }}) -- ({{ '%.2f'|format(lv.x_right) }}, {{ '%.2f'|format(lv.y) }});
+{% if lv.right_label %}\node[energylabel, anchor=south west, yshift=2pt] at ({{ '%.2f'|format(lv.x_right + 0.05) }}, {{ '%.2f'|format(lv.y) }}) { {{- lv.right_label -}} };
+{% endif %}{% if lv.excited_label %}\node[excitedlabel, anchor=south west, yshift=2pt] at ({{ '%.2f'|format(lv.x_right + 0.05) }}, {{ '%.2f'|format(lv.y) }}) { {{- lv.excited_label -}} };
+{% endif %}{% if lv.terminal_label %}\node[terminallabel, anchor=north west, yshift=-2pt] at ({{ '%.2f'|format(lv.x_right + 0.05) }}, {{ '%.2f'|format(lv.y) }}) { {{- lv.terminal_label -}} };
+{% endif %}{% endfor %}
+
+% Transitions
+{% for t in transitions %}
+\draw[{{ t.kind }}] ({{ '%.2f'|format(t.src_x) }}, {{ '%.2f'|format(t.src_y) }}) -- ({{ '%.2f'|format(t.dst_x) }}, {{ '%.2f'|format(t.dst_y) }}){% if t.label %} node[{{ 'garrowlabel' if t.kind == 'gammaarrow' else 'arrowlabel' }}, pos={{ '%.2f'|format(t.label_pos) }}] { {{- t.label -}} }{% endif %};
+{% endfor %}
+
+\end{tikzpicture}
+\end{document}
