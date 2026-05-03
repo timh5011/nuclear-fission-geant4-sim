@@ -48,10 +48,25 @@ void MyTrackingAction::PreUserTrackingAction(const G4Track* track) {
     // this early-return to start logging photons here too.
     if (pd == G4OpticalPhoton::Definition()) return;
 
-    // I think this is where I can say to not inclyde delta electrons in the truth record as well but im not sure
-    // also not sure if the creator processes ionIoni and eIoni uniquely characterize these particles
-
     const G4int pdg = pd->GetPDGEncoding();
+
+    // Delta electrons (knock-on e- from ionization of any charged primary —
+    // betas, fission fragments, alphas, etc.) are excluded from both the
+    // truth tree and the chain counts: they are an EM byproduct of transport,
+    // not part of the nuclear decay chain. If they deposit energy in a
+    // scintillator they show up downstream as scintillation light, same as
+    // optical photons. The Geant4 ionization processes that produce delta
+    // rays all share the "Ioni" suffix (eIoni, ionIoni, hIoni, muIoni).
+    if (pdg == 11) {
+        const auto* cp = track->GetCreatorProcess();
+        if (cp) {
+            const G4String& name = cp->GetProcessName();
+            if (name.length() >= 4 &&
+                name.compare(name.length() - 4, 4, "Ioni") == 0) {
+                return;
+            }
+        }
+    }
 
     TruthRow row;
     row.eventId        = G4EventManager::GetEventManager()

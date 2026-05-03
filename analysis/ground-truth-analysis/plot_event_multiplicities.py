@@ -4,6 +4,9 @@
 For a run directory data/<timestamp>/, writes 8 PDFs to
 plots/<timestamp>_plots/multiplicities/, one per multiplicity column. Each
 histogram bin is one integer.
+
+Example (runs from anywhere — script resolves the repo root from __file__):
+    python analysis/ground-truth-analysis/plot_event_multiplicities.py 20260430T052100
 """
 from __future__ import annotations
 

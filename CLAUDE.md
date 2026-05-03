@@ -39,9 +39,26 @@ The four user classes:
 1. `G4ParticleHPManager::GetInstance()->SetProduceFissionFragments(true)` — without this, the HP package deposits fission energy locally instead of producing explicit fission-fragment ion tracks. Confirmation: `Fission fragment production is now activated in HP package for Z = 92, A = 235` in the run log.
 2. `G4OpticalParameters::Instance()->SetScintByParticleType(true)` — required for per-particle scintillation yields (the lever PSD pulls on). In Geant4 v11 this flag moved from `G4OpticalPhysics` to `G4OpticalParameters`. With the flag on, `G4Scintillation::PostStepDoIt` throws fatal `Scint01` if any particle deposits energy in a scintillator that lacks a per-particle yield curve — which is why `DefineMaterials()` populates electron / proton / ion / alpha / deuteron / triton curves on **both** scintillators.
 
-**Output.** Each run writes one `data/<UTC-YYYYMMDDTHHMMSS>/` directory at the repo root containing `hits.csv` (one row per non-optical-photon track entry into a sensitive volume, with nonzero edep) and `events.csv` (one row per event). `MyRunAction` walks up from CWD looking for `nuclear-fission.cc` to resolve the repo root.
+**Output.** Each run writes one `data/<UTC-YYYYMMDDTHHMMSS>/` directory at the repo root containing three CSVs:
+- `hits.csv` — one row per non-optical-photon track entry into a sensitive scintillator volume (with nonzero edep). Detector-stage observable. Columns: `event_id, detector_id, track_id, particle, creator_process, entry_time_ns, energy_dep_MeV`.
+- `truth-record.csv` — one row per track produced anywhere in the event, with optical photons and delta electrons (e- whose creator process ends in `Ioni`) filtered out at source in `MyTrackingAction`. Source-stage ground truth. Columns: `event_id, track_id, parent_track_id, particle, creator_process, creation_time_ns, initial_KE_MeV`.
+- `events-truth.csv` — one row per fission event with the fragment PDGs and chain-multiplicity columns (`n_prompt_neutrons`, `n_chain_betas`, etc.). Header line `# n_thermal_neutrons=N` records the run's primary count.
 
-**Phase status.** Phases A (geometry/materials/generator/mode dispatch), B (`ScintillatorSD` + `CsvWriter` + RunAction/EventAction wiring), and C (fission watcher in `MySteppingAction` populating `EventRecord.fissionTimeNs` / prompt-n/γ multiplicities / fragment PDGs) are all complete. `MySteppingAction::UserSteppingAction` matches the HP fission post-step process `"nFissionHP"` (set by QGSP_BIC_HP, overriding the `G4NeutronFissionProcess` default `"nFission"`); a single-shot `G4cout` of the matched process name on the first fission step of every run sits in the source as a permanent self-check. The `analysis/` and `plots/` directories are still empty placeholders. Photon scoring, SiPM/PMT models, the trigger scintillator (design.md §1.C), and intrinsic LaBr₃ backgrounds remain deferred.
+`MyRunAction` walks up from CWD looking for `nuclear-fission.cc` to resolve the repo root.
+
+**Phase status.** Phases A (geometry/materials/generator/mode dispatch), B (`ScintillatorSD` + `CsvWriter` + RunAction/EventAction wiring), and C (fission watcher in `MySteppingAction` populating `EventRecord.fissionTimeNs` / prompt-n/γ multiplicities / fragment PDGs) are all complete. `MySteppingAction::UserSteppingAction` matches the HP fission post-step process `"nFissionHP"` (set by QGSP_BIC_HP, overriding the `G4NeutronFissionProcess` default `"nFission"`); a single-shot `G4cout` of the matched process name on the first fission step of every run sits in the source as a permanent self-check.
+
+`analysis/ground-truth-analysis/` consumes the source-stage CSVs and produces per-run / per-event PDFs into `plots/<ts>_plots/`:
+- `plot_energy_spectra.py` → `energy-spectra/` (6 PDFs, per-particle-category KE histograms — neutron/gamma/beta/alpha/ion/other).
+- `plot_event_multiplicities.py` → `multiplicities/` (8 PDFs, prompt + chain n/γ + chain β/α/ion/other).
+- `plot_decay_schemes.py` → `decay-schemes/` (NNDC/ENSDF nuclear decay scheme per fission event, TikZ-rendered via `pdflatex` with the Jinja2-templated `decay_scheme_template.tex.j2`; one PDF per event).
+- `plot_decay_trees.py` → `decay-trees/` (graphviz LR decay tree per fission event, complementary "no-overlap-by-construction" view; one PDF per event).
+
+`plot_decay_schemes.py` requires `pdflatex` on `$PATH`; `plot_decay_trees.py` requires the `dot` binary. Both share chain-shaping (`walk_chain` → `filter_chain_emissions` → `coalesce_isomers`) defined in `plot_decay_schemes.py` and imported by `plot_decay_trees.py`. `analysis/daq/` (`psd.py`, `scintillation_temporal_analysis.py`) are detector-stage placeholders, not yet wired up.
+
+**Analysis-script convention.** Every script in `analysis/` includes a runnable example invocation in its module docstring, under an `Example:` line. The example shows the exact terminal command (interpreter, path-to-script, positional/optional args) and notes the working directory if it matters. Existing ground-truth scripts all resolve the repo root via `find_repo_root(Path(__file__).resolve().parent)`, so they can be invoked from anywhere — make a note of that ("runs from anywhere") in the example. New analysis scripts should follow the same pattern: doc-string includes a one-paragraph description of what the script produces, then a short `Example:` block with a copy-pasteable command.
+
+Photon scoring, SiPM/PMT models, the trigger scintillator (design.md §1.C), and intrinsic LaBr₃ backgrounds remain deferred.
 
 ## What you'll see in the OGL viewer
 

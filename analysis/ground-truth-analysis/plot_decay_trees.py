@@ -16,6 +16,9 @@ Reuses chain-shaping (walk_chain → filter_chain_emissions → coalesce_isomers
 and label-formatting helpers from ``plot_decay_schemes`` so the two diagrams
 stay semantically consistent. Requires the ``dot`` binary on $PATH (Homebrew
 ``brew install graphviz`` or Anaconda's ``graphviz`` package).
+
+Example (runs from anywhere — script resolves the repo root from __file__):
+    python analysis/ground-truth-analysis/plot_decay_trees.py 20260430T052100
 """
 from __future__ import annotations
 

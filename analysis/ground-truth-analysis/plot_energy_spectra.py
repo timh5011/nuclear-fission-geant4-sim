@@ -2,8 +2,10 @@
 """Plot per-particle-category initial-KE histograms from truth-record.csv.
 
 For a run directory data/<timestamp>/, writes PDFs to
-plots/<timestamp>_plots/energy-spectra/. One PDF per category, plus an extra
-e- spectrum that does not filter out delta electrons.
+plots/<timestamp>_plots/energy-spectra/. One PDF per category.
+
+Example (runs from anywhere — script resolves the repo root from __file__):
+    python analysis/ground-truth-analysis/plot_energy_spectra.py 20260430T052100
 """
 from __future__ import annotations
 
@@ -189,18 +191,7 @@ def main() -> int:
             info_lines=info,
         )
 
-    extra = df[df["particle"].isin({"e-", "e+"})]
-    info = base_info + [f"tracks     {len(extra)}", "filter     none (incl. delta e-)"]
-    plot_spectrum(
-        extra["initial_KE_MeV"].to_numpy(),
-        title=f"beta initial KE (with deltas) — run {args.timestamp}",
-        xscale="log", log_lo=1e-4, n_bins=80,
-        n_events=n_events,
-        out_path=out_dir / "energy_spectrum_beta_with_deltas.pdf",
-        info_lines=info,
-    )
-
-    print(f"wrote 7 PDFs to {out_dir}")
+    print(f"wrote 6 PDFs to {out_dir}")
     return 0
 
 

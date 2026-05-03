@@ -12,6 +12,9 @@ Rendering pipeline: Python computes (columns, levels, transitions) from the
 truth record, fills decay_scheme_template.tex.j2 via Jinja2, and shells out
 to pdflatex to produce the PDF. Requires pdflatex on $PATH (TeX Live/MacTeX).
 
+Example (runs from anywhere — script resolves the repo root from __file__):
+    python analysis/ground-truth-analysis/plot_decay_schemes.py 20260430T052100
+
 Delta electrons and other EM-transport secondaries are excluded
 (creator_process must be in {primary, nFissionHP, RadioactiveDecay}).
 
