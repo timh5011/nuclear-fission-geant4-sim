@@ -24,8 +24,17 @@ Visual cleanup rules applied to every chain before rendering:
   2. Isomer coalesce — merge consecutive same-(Z,A) chain entries (Geant4's
      IT cascade is recorded as several "Pr150 → Pr150" steps; collapse them
      into a single γ cascade in the parent column).
+  3. γ-cascade collapse — every decay step's γ emissions render as ONE
+     dashed arrow from the populated excited level down to the daughter
+     ground, labelled "γ × N: total MeV" (or "γ: E_γ MeV" if N == 1).
+     Geant4 represents the cascade as N sibling photons of the same
+     RadioactiveDecay vertex, but the per-γ energies are rarely the
+     actionable information at decay-scheme scale (the cumulative cascade
+     energy = excited-state population energy is what the reader cares
+     about, and that is annotated as E* on the topmost excited level).
 
 After (2), no chain contains repeated consecutive same-(Z,A) ion entries.
+After (3), each decay step contributes at most one γ arrow to the diagram.
 
 Layout: within-column levels are pushed apart to a minimum vertical gap
 (MIN_LEVEL_GAP_CM). This makes the y-axis nominal rather than strictly
@@ -57,10 +66,10 @@ EMISSION_KE_FLOOR_MEV = 0.005   # drop emissions below 5 keV (IC / Auger noise)
 # Layout
 COLUMN_SPACING_CM = 3.2
 LEVEL_HALF_W = 0.72         # half-width of level lines in cm
-Y_SCALE = 0.55              # cm per MeV of cumulative Q (provisional, before
+Y_SCALE = 0.70              # cm per MeV of cumulative Q (provisional, before
                             # MIN_LEVEL_GAP_CM enforcement)
 GAMMA_X_OFFSET = 0.45       # cm right of level centre for vertical γ arrows
-MIN_LEVEL_GAP_CM = 0.45     # minimum vertical gap between adjacent levels in
+MIN_LEVEL_GAP_CM = 0.55     # minimum vertical gap between adjacent levels in
                             # the same column (post-spacing enforcement makes
                             # the y-axis nominal, not strictly linear in MeV)
 
@@ -473,57 +482,40 @@ def build_diagram(
             # populated by the β/α, ground if no γ cascade):
             arrow_dst_y = daughter_ground_y + sum_gamma
 
-            # ── γ cascade arrows in daughter column ────────────────────────────
-            # For an IT step (kind == 'gammaarrow'), the daughter column equals
-            # the parent column, and the cascade renders inside that column.
+            # ── γ cascade as a single collapsed arrow ──────────────────────────
+            # Geant4 emits all γs of a decay step as siblings of the same
+            # RadioactiveDecay vertex; we render them as ONE dashed arrow from
+            # the populated excited level (top) down to the daughter ground
+            # level. The label carries (count, total energy). This eliminates
+            # the per-γ midway-label collisions that plague γ-rich columns.
+            #
+            # For IT steps (kind == 'gammaarrow'), the daughter column equals
+            # the parent column; the collapsed cascade renders inside that
+            # column. The cross-column β/α header below is then skipped.
             cascade_top_level_idx = -1
             if gammas:
-                cur_y = arrow_dst_y
-                remaining = sum_gamma
-                cascade_levels: list[int] = []
-                for g_idx, (e_g, _) in enumerate(gammas):
-                    next_y = cur_y - e_g
-                    remaining -= e_g
-                    is_last = g_idx == len(gammas) - 1
-
-                    # Source of this γ arrow: an excited level in the daughter
-                    # column. Add it (except for the very first γ in an IT
-                    # step where we want to anchor to cur_level instead — but
-                    # for simplicity we add a separate excited level for every
-                    # γ-emission origin).
-                    if g_idx == 0:
-                        src_lv_idx = add_level(Level(
-                            col_id=dcol_id,
-                            y_mev=cur_y,
-                            excited_label=f"$E^*={sum_gamma:.3f}$",
-                        ))
-                        cascade_top_level_idx = src_lv_idx
-                    else:
-                        src_lv_idx = cascade_levels[-1]
-
-                    if not is_last:
-                        dst_lv_idx = add_level(Level(
-                            col_id=dcol_id,
-                            y_mev=next_y,
-                            excited_label=f"$E^*={remaining:.3f}$",
-                        ))
-                    else:
-                        dst_lv_idx = -1  # next chain iteration adds the daughter ground
-
-                    cascade_levels.append(dst_lv_idx if dst_lv_idx != -1 else src_lv_idx)
-
-                    transitions.append(RawTransition(
-                        kind="gammaarrow",
-                        src_col_id=dcol_id,
-                        src_level_idx=src_lv_idx,
-                        src_y_mev=cur_y,
-                        dst_col_id=dcol_id,
-                        dst_level_idx=dst_lv_idx,  # -1 → use dst_y_mev
-                        dst_y_mev=next_y,
-                        label=f"$\\gamma$: {e_g:.3f}",
-                        label_pos=0.5,
-                    ))
-                    cur_y = next_y
+                # One excited level at the populated state (top of cascade)
+                cascade_top_level_idx = add_level(Level(
+                    col_id=dcol_id,
+                    y_mev=arrow_dst_y,
+                    excited_label=f"$E^* = {sum_gamma:.3f}$",
+                ))
+                n_g = len(gammas)
+                if n_g == 1:
+                    g_label = rf"$\gamma$: {sum_gamma:.3f} MeV"
+                else:
+                    g_label = rf"$\gamma \times {n_g}$: {sum_gamma:.3f} MeV"
+                transitions.append(RawTransition(
+                    kind="gammaarrow",
+                    src_col_id=dcol_id,
+                    src_level_idx=cascade_top_level_idx,
+                    src_y_mev=arrow_dst_y,
+                    dst_col_id=dcol_id,
+                    dst_level_idx=-1,           # next chain iteration adds the daughter ground level
+                    dst_y_mev=daughter_ground_y,
+                    label=g_label,
+                    label_pos=0.5,
+                ))
 
             # ── cross-column β/α arrow ─────────────────────────────────────────
             # Skip cross-column header for γ-only (IT) steps. After coalesce,
