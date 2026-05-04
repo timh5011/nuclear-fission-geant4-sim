@@ -1,0 +1,2 @@
+set(__QT_DEPLOY_TARGET_nuclear_fission_FILE /Users/timmymac/Desktop/Professional/HEP/geant4/simulations/nuclear-fission-geant4-sim/build/nuclear_fission)
+set(__QT_DEPLOY_TARGET_nuclear_fission_TYPE EXECUTABLE)
