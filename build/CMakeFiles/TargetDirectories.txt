@@ -1,3 +1,0 @@
-/Users/timmymac/Desktop/Professional/HEP/geant4/simulations/nuclear-fission-geant4-sim/build/CMakeFiles/nuclear_fission.dir
-/Users/timmymac/Desktop/Professional/HEP/geant4/simulations/nuclear-fission-geant4-sim/build/CMakeFiles/edit_cache.dir
-/Users/timmymac/Desktop/Professional/HEP/geant4/simulations/nuclear-fission-geant4-sim/build/CMakeFiles/rebuild_cache.dir
