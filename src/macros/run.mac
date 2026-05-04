@@ -3,5 +3,5 @@
 # After Phase B lands, this writes data/<UTC>/hits.csv + events.csv at repo root.
 
 /run/initialize
-/run/printProgress 100
-/run/beamOn 50000
+/run/printProgress 1000
+/run/beamOn 10000
